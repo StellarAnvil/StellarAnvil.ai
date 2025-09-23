@@ -10,4 +10,5 @@ public interface IWorkflowService
     Task<bool> TransitionTaskAsync(Guid taskId, WorkflowState toState, Guid teamMemberId, string? notes = null);
     Task<TeamMember?> GetNextAssigneeAsync(Guid taskId, WorkflowState currentState);
     Task<bool> IsConfirmationMessageAsync(string message);
+    Task<IEnumerable<Workflow>> GetDefaultWorkflowsAsync();
 }

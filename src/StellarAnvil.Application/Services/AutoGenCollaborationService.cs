@@ -93,9 +93,13 @@ public class AutoGenCollaborationService
         var maxIterations = 3;
         var iteration = 0;
 
-        // Load system prompts
-        var juniorPrompt = await LoadSystemPrompt(juniorMember.SystemPromptFile);
-        var seniorPrompt = await LoadSystemPrompt(seniorMember.SystemPromptFile);
+        // Use system prompts from team members
+        var juniorPrompt = !string.IsNullOrEmpty(juniorMember.SystemPrompt)
+            ? juniorMember.SystemPrompt
+            : "You are a junior team member. Work on tasks and incorporate feedback from senior members.";
+        var seniorPrompt = !string.IsNullOrEmpty(seniorMember.SystemPrompt)
+            ? seniorMember.SystemPrompt
+            : "You are a senior team member. Review work from junior members and provide constructive feedback.";
 
         while (iteration < maxIterations)
         {
@@ -181,23 +185,6 @@ public class AutoGenCollaborationService
         return response.Message.Text ?? "No response generated";
     }
 
-    private static async Task<string> LoadSystemPrompt(string promptFile)
-    {
-        try
-        {
-            var path = Path.Combine("SystemPrompts", promptFile);
-            if (File.Exists(path))
-            {
-                return await File.ReadAllTextAsync(path);
-            }
-        }
-        catch
-        {
-            // Ignore file read errors
-        }
-        
-        return "You are an AI assistant helping with software development tasks.";
-    }
 
     /// <summary>
     /// Get confirmation from lead or human team member
@@ -212,9 +199,11 @@ public class AutoGenCollaborationService
         
         if (leadMember != null && leadMember.Type == TeamMemberType.AI)
         {
-            var leadPrompt = await LoadSystemPrompt(leadMember.SystemPromptFile);
+            var leadPrompt = !string.IsNullOrEmpty(leadMember.SystemPrompt)
+                ? leadMember.SystemPrompt
+                : "You are a lead team member. Review work and make final approval decisions.";
             var confirmationPrompt = $"Please review this work and decide if it's ready to move to the next phase:\n\n{workSummary}\n\nRespond with 'YES' if approved or 'NO' with specific concerns if not approved.";
-            
+
             var response = await GetAgentResponse(leadMember, leadPrompt, confirmationPrompt);
             return response.Trim().StartsWith("YES", StringComparison.OrdinalIgnoreCase);
         }

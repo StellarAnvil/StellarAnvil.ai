@@ -5,6 +5,7 @@ using Microsoft.SemanticKernel;
 using StellarAnvil.Application.Services;
 using StellarAnvil.Application.Mappings;
 using StellarAnvil.Application.Skills;
+using StellarAnvil.Domain.Services;
 
 namespace StellarAnvil.Application;
 
@@ -19,13 +20,18 @@ public static class DependencyInjection
         services.AddScoped<ITeamMemberApplicationService, TeamMemberApplicationService>();
         services.AddScoped<IChatService, ChatService>();
         services.AddScoped<ITaskApplicationService, TaskApplicationService>();
+        services.AddScoped<IMcpConfigurationService, McpConfigurationService>();
         services.AddScoped<AutoGenCollaborationService>();
         services.AddScoped<WorkflowStateMachine>();
+        services.AddScoped<WorkflowPlannerService>();
+        services.AddScoped<ISystemPromptService, SystemPromptService>();
 
         // Skills
         services.AddScoped<ContinueDevSkills>();
         services.AddScoped<JiraMcpSkills>();
+        services.AddScoped<UxDesignSkills>();
         services.AddHttpClient<JiraMcpSkills>();
+        services.AddHttpClient<McpConfigurationService>();
 
         // AI Services
         services.AddSingleton<IChatClient>(provider =>

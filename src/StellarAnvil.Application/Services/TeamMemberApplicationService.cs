@@ -2,6 +2,7 @@ using AutoMapper;
 using StellarAnvil.Application.DTOs;
 using StellarAnvil.Domain.Entities;
 using StellarAnvil.Domain.Enums;
+using StellarAnvil.Domain.Services;
 using StellarAnvil.Infrastructure.Repositories;
 
 namespace StellarAnvil.Application.Services;
@@ -10,11 +11,13 @@ public class TeamMemberApplicationService : ITeamMemberApplicationService
 {
     private readonly IRepository<TeamMember> _repository;
     private readonly IMapper _mapper;
+    private readonly ISystemPromptService _systemPromptService;
 
-    public TeamMemberApplicationService(IRepository<TeamMember> repository, IMapper mapper)
+    public TeamMemberApplicationService(IRepository<TeamMember> repository, IMapper mapper, ISystemPromptService systemPromptService)
     {
         _repository = repository;
         _mapper = mapper;
+        _systemPromptService = systemPromptService;
     }
 
     public async Task<IEnumerable<TeamMemberDto>> GetAllAsync()
@@ -33,10 +36,10 @@ public class TeamMemberApplicationService : ITeamMemberApplicationService
     {
         var teamMember = _mapper.Map<TeamMember>(createDto);
         
-        // Set default system prompt file if not provided
-        if (string.IsNullOrEmpty(teamMember.SystemPromptFile))
+        // Set default system prompt if not provided
+        if (string.IsNullOrEmpty(teamMember.SystemPrompt))
         {
-            teamMember.SystemPromptFile = GetDefaultSystemPromptFile(teamMember.Role);
+            teamMember.SystemPrompt = _systemPromptService.GetDefaultSystemPrompt(teamMember.Role);
         }
 
         var createdTeamMember = await _repository.AddAsync(teamMember);
@@ -72,18 +75,4 @@ public class TeamMemberApplicationService : ITeamMemberApplicationService
         return teamMember != null ? _mapper.Map<TeamMemberDto>(teamMember) : null;
     }
 
-    private static string GetDefaultSystemPromptFile(TeamMemberRole role)
-    {
-        return role switch
-        {
-            TeamMemberRole.ProductOwner => "prompts/product-owner.txt",
-            TeamMemberRole.BusinessAnalyst => "prompts/business-analyst.txt",
-            TeamMemberRole.Architect => "prompts/architect.txt",
-            TeamMemberRole.UXDesigner => "prompts/ux-designer.txt",
-            TeamMemberRole.Developer => "prompts/developer.txt",
-            TeamMemberRole.QualityAssurance => "prompts/quality-assurance.txt",
-            TeamMemberRole.SecurityReviewer => "prompts/security-reviewer.txt",
-            _ => "prompts/default.txt"
-        };
-    }
 }

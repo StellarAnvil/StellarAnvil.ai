@@ -11,7 +11,7 @@ public class TeamMemberDto
     public TeamMemberRole Role { get; set; }
     public TeamMemberGrade Grade { get; set; }
     public string? Model { get; set; }
-    public string SystemPromptFile { get; set; } = string.Empty;
+    public string SystemPrompt { get; set; } = string.Empty;
     public Guid? CurrentTaskId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -25,7 +25,7 @@ public class CreateTeamMemberDto
     public TeamMemberRole Role { get; set; }
     public TeamMemberGrade Grade { get; set; }
     public string? Model { get; set; }
-    public string? SystemPromptFile { get; set; }
+    public string? SystemPrompt { get; set; }
 }
 
 public class UpdateTeamMemberDto
@@ -36,5 +36,5 @@ public class UpdateTeamMemberDto
     public TeamMemberRole? Role { get; set; }
     public TeamMemberGrade? Grade { get; set; }
     public string? Model { get; set; }
-    public string? SystemPromptFile { get; set; }
+    public string? SystemPrompt { get; set; }
 }

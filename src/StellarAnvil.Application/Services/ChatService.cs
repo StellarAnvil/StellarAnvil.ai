@@ -2,6 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
 using StellarAnvil.Application.DTOs.OpenAI;
 using StellarAnvil.Domain.Services;
+using StellarAnvil.Domain.Enums;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -40,7 +41,9 @@ public class ChatService : IChatService
         // Process the chat completion
         
         // Add system prompt based on team member role
-        var systemPrompt = await LoadSystemPrompt(teamMember.SystemPromptFile);
+        var systemPrompt = !string.IsNullOrEmpty(teamMember.SystemPrompt)
+            ? teamMember.SystemPrompt
+            : GetDefaultSystemPrompt(teamMember.Role);
         var aiMessages = new List<Microsoft.Extensions.AI.ChatMessage>();
         
         if (!string.IsNullOrEmpty(systemPrompt))
@@ -142,22 +145,19 @@ public class ChatService : IChatService
     }
 
 
-    private static async Task<string> LoadSystemPrompt(string promptFile)
+    private static string GetDefaultSystemPrompt(TeamMemberRole role)
     {
-        try
+        return role switch
         {
-            var path = Path.Combine("SystemPrompts", promptFile);
-            if (File.Exists(path))
-            {
-                return await File.ReadAllTextAsync(path);
-            }
-        }
-        catch
-        {
-            // Ignore file read errors
-        }
-        
-        return string.Empty;
+            TeamMemberRole.ProductOwner => "You are a Product Owner AI. Prioritize features based on business value. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            TeamMemberRole.BusinessAnalyst => "You are a Business Analyst AI. Analyze requirements and work exclusively with Jira for task management. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            TeamMemberRole.Architect => "You are an Architect AI. Design system architecture and technical solutions. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            TeamMemberRole.UXDesigner => "You are a UX Designer AI. Focus on user experience and interface design. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            TeamMemberRole.Developer => "You are a Developer AI. Implement features and write code according to specifications. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            TeamMemberRole.QualityAssurance => "You are a Quality Assurance AI. Test applications and ensure quality standards. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            TeamMemberRole.SecurityReviewer => "You are a Security Reviewer AI. Analyze code and systems for security vulnerabilities. Follow higher grade priority in conflicts. Only one assignment at a time.",
+            _ => "You are an AI assistant helping with software development tasks."
+        };
     }
 
     private static ChatCompletionResponse CreateErrorResponse(string message)

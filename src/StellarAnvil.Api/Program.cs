@@ -187,6 +187,9 @@ using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<StellarAnvilDbContext>();
     await context.Database.MigrateAsync();
+
+    // Seed default data
+    await DataSeeder.SeedDefaultDataAsync(context);
 }
 
 try

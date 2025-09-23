@@ -32,7 +32,7 @@ public class StellarAnvilDbContext : DbContext
             entity.Property(e => e.Role).HasConversion<int>();
             entity.Property(e => e.Grade).HasConversion<int>();
             entity.Property(e => e.Model).HasMaxLength(100);
-            entity.Property(e => e.SystemPromptFile).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.SystemPrompt).IsRequired().HasMaxLength(2000);
             entity.HasIndex(e => e.Email).IsUnique();
             entity.HasIndex(e => e.Name);
             
@@ -123,7 +123,7 @@ public class StellarAnvilDbContext : DbContext
             entity.Property(e => e.Type).IsRequired().HasMaxLength(100);
             entity.Property(e => e.ApiKey).IsRequired().HasMaxLength(500);
             entity.Property(e => e.BaseUrl).IsRequired().HasMaxLength(500);
-            entity.Property(e => e.Configuration).HasColumnType("jsonb");
+            entity.Property(e => e.Settings).HasColumnType("text");
             entity.HasIndex(e => new { e.Name, e.Type }).IsUnique();
         });
 

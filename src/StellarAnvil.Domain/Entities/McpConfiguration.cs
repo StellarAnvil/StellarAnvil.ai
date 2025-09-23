@@ -7,7 +7,7 @@ public class McpConfiguration
     public string Type { get; set; } = string.Empty; // e.g., "Jira", "Figma", etc.
     public string ApiKey { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = string.Empty;
-    public string? Configuration { get; set; } // JSON configuration
+    public string Settings { get; set; } = "{}"; // JSON settings
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

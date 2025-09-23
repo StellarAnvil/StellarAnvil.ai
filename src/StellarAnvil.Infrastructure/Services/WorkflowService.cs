@@ -162,4 +162,12 @@ public class WorkflowService : IWorkflowService
 
         return result == "YES";
     }
+
+    public async Task<IEnumerable<Workflow>> GetDefaultWorkflowsAsync()
+    {
+        return await _context.Workflows
+            .Include(w => w.Transitions)
+            .Where(w => w.IsDefault)
+            .ToListAsync();
+    }
 }

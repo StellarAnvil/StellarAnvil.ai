@@ -21,5 +21,11 @@ public class MappingProfile : Profile
         CreateMap<CreateTaskDto, Domain.Entities.Task>();
         CreateMap<UpdateTaskDto, Domain.Entities.Task>()
             .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+
+        // MCP Configuration mappings
+        CreateMap<McpConfiguration, McpConfigurationDto>();
+        CreateMap<CreateMcpConfigurationDto, McpConfiguration>();
+        CreateMap<UpdateMcpConfigurationDto, McpConfiguration>()
+            .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
     }
 }

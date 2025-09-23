@@ -11,7 +11,7 @@ public class TeamMember
     public TeamMemberRole Role { get; set; }
     public TeamMemberGrade Grade { get; set; }
     public string? Model { get; set; }
-    public string SystemPromptFile { get; set; } = string.Empty;
+    public string SystemPrompt { get; set; } = string.Empty;
     public Guid? CurrentTaskId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
