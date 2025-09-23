@@ -156,15 +156,14 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
+// Enable Swagger in all environments
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "StellarAnvil API V1");
-        c.RoutePrefix = string.Empty; // Serve Swagger UI at root
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "StellarAnvil API V1");
+    c.RoutePrefix = "swagger"; // Serve Swagger UI at /swagger
+    c.DocumentTitle = "StellarAnvil API Documentation";
+});
 
 // Custom middleware
 app.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -186,7 +185,7 @@ app.MapPrometheusScrapingEndpoint();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<StellarAnvilDbContext>();
-    await context.Database.MigrateAsync();
+    await context.Database.EnsureCreatedAsync(); // Ensure database exists
 
     // Seed default data
     await DataSeeder.SeedDefaultDataAsync(context);

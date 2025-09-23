@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<WorkflowStateMachine>();
         services.AddScoped<WorkflowPlannerService>();
         services.AddScoped<ISystemPromptService, SystemPromptService>();
+        services.AddScoped<IAIClientService, AIClientService>();
 
         // Skills
         services.AddScoped<ContinueDevSkills>();
@@ -33,18 +34,6 @@ public static class DependencyInjection
         services.AddHttpClient<JiraMcpSkills>();
         services.AddHttpClient<McpConfigurationService>();
 
-        // AI Services
-        services.AddSingleton<IChatClient>(provider =>
-        {
-            var openAiApiKey = configuration["AI:OpenAI:ApiKey"];
-            if (!string.IsNullOrEmpty(openAiApiKey))
-            {
-                return new MockChatClient(); // Use mock for now - replace with actual OpenAI client when available
-            }
-            
-            // Fallback to a mock client for development
-            return new MockChatClient();
-        });
 
         // Semantic Kernel
         services.AddSingleton<Kernel>(provider =>
@@ -83,54 +72,3 @@ public static class DependencyInjection
     }
 }
 
-// Mock chat client for development/testing
-public class MockChatClient : IChatClient
-{
-    public ChatClientMetadata Metadata => new("mock-client");
-
-    public async Task<ChatCompletion> CompleteAsync(IList<ChatMessage> chatMessages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(100, cancellationToken); // Simulate API call
-        
-        var lastMessage = chatMessages.LastOrDefault()?.Text ?? "";
-        var response = GenerateMockResponse(lastMessage);
-        
-        return new ChatCompletion(new ChatMessage(ChatRole.Assistant, response));
-    }
-
-    public IAsyncEnumerable<StreamingChatCompletionUpdate> CompleteStreamingAsync(IList<ChatMessage> chatMessages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Streaming not implemented in mock client");
-    }
-
-    public void Dispose()
-    {
-        // Nothing to dispose
-    }
-
-    public TService? GetService<TService>(object? key = null) where TService : class
-    {
-        return null;
-    }
-
-    public object? GetService(Type serviceType, object? key = null)
-    {
-        return null;
-    }
-
-    private static string GenerateMockResponse(string input)
-    {
-        if (input.Contains("workflow", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Simple SDLC Workflow";
-        }
-        
-        if (input.Contains("yes", StringComparison.OrdinalIgnoreCase) || 
-            input.Contains("confirm", StringComparison.OrdinalIgnoreCase))
-        {
-            return "YES";
-        }
-        
-        return "I'm a mock AI assistant. This is a placeholder response for development purposes.";
-    }
-}

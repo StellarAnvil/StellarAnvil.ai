@@ -16,19 +16,22 @@ public class TaskApplicationService : ITaskApplicationService
     private readonly WorkflowStateMachine _stateMachine;
     private readonly StellarAnvilDbContext _context;
     private readonly IMapper _mapper;
+    private readonly ITeamMemberService _teamMemberService;
 
     public TaskApplicationService(
         IRepository<Domain.Entities.Task> taskRepository,
         IWorkflowService workflowService,
         WorkflowStateMachine stateMachine,
         StellarAnvilDbContext context,
-        IMapper mapper)
+        IMapper mapper,
+        ITeamMemberService teamMemberService)
     {
         _taskRepository = taskRepository;
         _workflowService = workflowService;
         _stateMachine = stateMachine;
         _context = context;
         _mapper = mapper;
+        _teamMemberService = teamMemberService;
     }
 
     public async Task<IEnumerable<TaskDto>> GetAllAsync()
@@ -75,6 +78,41 @@ public class TaskApplicationService : ITaskApplicationService
             .FirstOrDefaultAsync(t => t.Id == createdTask.Id);
 
         return _mapper.Map<TaskDto>(taskWithDetails);
+    }
+
+    public async Task<TaskDto?> GetByTaskNumberAsync(int taskNumber)
+    {
+        // For simplicity, we'll use the task ID as task number
+        // In a real system, you might have a separate TaskNumber field
+        var task = await _context.Tasks
+            .Include(t => t.Assignee)
+            .Include(t => t.Workflow)
+            .FirstOrDefaultAsync(t => t.Id.ToString().GetHashCode() == taskNumber || 
+                                     t.Id.ToString().EndsWith(taskNumber.ToString()));
+
+        return task != null ? _mapper.Map<TaskDto>(task) : null;
+    }
+
+    public async Task<bool> AssignTaskAsync(Guid taskId, Guid teamMemberId)
+    {
+        var task = await _taskRepository.GetByIdAsync(taskId);
+        if (task == null) return false;
+
+        var teamMember = await _context.TeamMembers.FindAsync(teamMemberId);
+        if (teamMember == null) return false;
+
+        // Unassign current team member if any
+        if (task.AssigneeId.HasValue)
+        {
+            await _teamMemberService.UnassignTaskAsync(task.AssigneeId.Value);
+        }
+
+        // Assign new team member
+        task.AssigneeId = teamMemberId;
+        await _taskRepository.UpdateAsync(task);
+        await _teamMemberService.AssignTaskAsync(teamMemberId, taskId);
+
+        return true;
     }
 
     public async Task<TaskDto?> UpdateAsync(Guid id, UpdateTaskDto updateDto)

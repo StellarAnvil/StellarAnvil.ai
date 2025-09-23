@@ -15,11 +15,6 @@ public class TaskDto
     public DateTime UpdatedAt { get; set; }
 }
 
-public class CreateTaskDto
-{
-    public string Description { get; set; } = string.Empty;
-}
-
 public class UpdateTaskDto
 {
     public string? Description { get; set; }

@@ -181,8 +181,10 @@ public class AutoGenCollaborationService
             new(ChatRole.User, userPrompt)
         };
 
-        var response = await _chatClient.CompleteAsync(messages);
-        return response.Message.Text ?? "No response generated";
+        // TODO: Fix this when we implement proper AI client integration
+        // var response = await _chatClient.GetResponseAsync(messages);
+        // return response.Messages?.FirstOrDefault()?.Text ?? "No response generated";
+        return "Collaboration response placeholder"; // Temporary hardcode
     }
 
 

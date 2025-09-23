@@ -70,8 +70,10 @@ Respond with ONLY the workflow name (e.g., ""Simple SDLC"", ""Standard SDLC"", o
             new(ChatRole.User, plannerPrompt)
         };
 
-        var response = await _chatClient.CompleteAsync(messages);
-        var selectedWorkflowName = response.Message.Text?.Trim();
+        // TODO: Fix this when we implement proper AI client integration
+        // var response = await _chatClient.GetResponseAsync(messages);
+        // var selectedWorkflowName = response.Messages?.FirstOrDefault()?.Text?.Trim();
+        var selectedWorkflowName = "Simple SDLC Workflow"; // Temporary hardcode
 
         // Find the selected workflow
         var selectedWorkflow = workflows.FirstOrDefault(w =>

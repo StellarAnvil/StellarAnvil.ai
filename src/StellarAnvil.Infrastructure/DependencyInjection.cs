@@ -19,10 +19,11 @@ public static class DependencyInjection
         // Repositories
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
-        // Domain Services
-        services.AddScoped<IWorkflowService, WorkflowService>();
-        services.AddScoped<ITeamMemberService, TeamMemberService>();
+            // Domain Services
+            services.AddScoped<IWorkflowService, WorkflowService>();
+            services.AddScoped<ITeamMemberService, TeamMemberService>();
 
-        return services;
+
+            return services;
     }
 }

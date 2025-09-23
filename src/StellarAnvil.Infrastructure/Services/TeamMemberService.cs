@@ -127,6 +127,19 @@ public class TeamMemberService : ITeamMemberService
             .FirstOrDefaultAsync(tm => tm.Name.ToLower() == name.ToLower());
     }
 
+    public async Task<TeamMember?> GetByIdAsync(Guid id)
+    {
+        return await _context.TeamMembers.FindAsync(id);
+    }
+
+    public async Task<List<TeamMember>> GetAvailableByRoleAsync(TeamMemberRole role)
+    {
+        return await _context.TeamMembers
+            .Where(tm => tm.Role == role && tm.CurrentTaskId == null)
+            .OrderBy(tm => tm.Grade) // Junior first, then Senior
+            .ToListAsync();
+    }
+
     public async Task<bool> IsTeamMemberAvailableAsync(Guid teamMemberId)
     {
         var teamMember = await _teamMemberRepository.GetByIdAsync(teamMemberId);

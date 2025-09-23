@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using StellarAnvil.Domain.Entities;
 using StellarAnvil.Domain.Enums;
 
@@ -7,102 +8,96 @@ public static class DataSeeder
 {
     public static async System.Threading.Tasks.Task SeedDefaultDataAsync(StellarAnvilDbContext context)
     {
-        if (!context.Workflows.Any())
+        // Check if data already exists
+        if (await context.Workflows.AnyAsync())
         {
-            await SeedDefaultWorkflowsAsync(context);
+            return; // Data already seeded
         }
 
-        if (!context.ApiKeys.Any())
+        // Seed default workflows
+        var fullWorkflowId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var standardWorkflowId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var simpleWorkflowId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        // Full workflow: PO -> BA -> Architect -> UX -> Dev -> QA -> Done
+        context.Workflows.Add(new Workflow
         {
-            await SeedDefaultApiKeysAsync(context);
-        }
+            Id = fullWorkflowId,
+            Name = "Full SDLC Workflow",
+            Description = "Complete software development lifecycle with all phases",
+            IsDefault = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
 
-        await context.SaveChangesAsync();
-    }
+        context.WorkflowTransitions.AddRange(
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = fullWorkflowId, FromState = WorkflowState.Planning, ToState = WorkflowState.RequirementsAnalysis, RequiredRole = TeamMemberRole.ProductOwner, Order = 1, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = fullWorkflowId, FromState = WorkflowState.RequirementsAnalysis, ToState = WorkflowState.ArchitecturalDesign, RequiredRole = TeamMemberRole.BusinessAnalyst, Order = 2, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = fullWorkflowId, FromState = WorkflowState.ArchitecturalDesign, ToState = WorkflowState.UXDesign, RequiredRole = TeamMemberRole.Architect, Order = 3, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = fullWorkflowId, FromState = WorkflowState.UXDesign, ToState = WorkflowState.Development, RequiredRole = TeamMemberRole.UXDesigner, Order = 4, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = fullWorkflowId, FromState = WorkflowState.Development, ToState = WorkflowState.QualityAssurance, RequiredRole = TeamMemberRole.Developer, Order = 5, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = fullWorkflowId, FromState = WorkflowState.QualityAssurance, ToState = WorkflowState.Completed, RequiredRole = TeamMemberRole.QualityAssurance, Order = 6, CreatedAt = DateTime.UtcNow }
+        );
 
-    private static System.Threading.Tasks.Task SeedDefaultWorkflowsAsync(StellarAnvilDbContext context)
-    {
-        var workflows = new List<Workflow>
+        // Standard workflow: PO -> BA -> Architect -> Dev -> QA -> Done
+        context.Workflows.Add(new Workflow
         {
-            // Simple SDLC: PO → BA → Dev → QA → Done
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Simple SDLC",
-                Description = "Simple workflow for basic tasks: Planning → Requirements → Development → QA → Done",
-                IsDefault = true,
-                Transitions = new List<WorkflowTransition>
-                {
-                    new() { FromState = WorkflowState.Planning, ToState = WorkflowState.RequirementsAnalysis, RequiredRole = TeamMemberRole.ProductOwner, Order = 1 },
-                    new() { FromState = WorkflowState.RequirementsAnalysis, ToState = WorkflowState.Development, RequiredRole = TeamMemberRole.BusinessAnalyst, Order = 2 },
-                    new() { FromState = WorkflowState.Development, ToState = WorkflowState.QualityAssurance, RequiredRole = TeamMemberRole.Developer, Order = 3 },
-                    new() { FromState = WorkflowState.QualityAssurance, ToState = WorkflowState.Completed, RequiredRole = TeamMemberRole.QualityAssurance, Order = 4 }
-                }
-            },
+            Id = standardWorkflowId,
+            Name = "Standard SDLC Workflow",
+            Description = "Standard software development lifecycle without UX design",
+            IsDefault = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
 
-            // Standard SDLC: PO → BA → Architect → Dev → QA → Done
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Standard SDLC",
-                Description = "Standard workflow with architecture: Planning → Requirements → Architecture → Development → QA → Done",
-                IsDefault = true,
-                Transitions = new List<WorkflowTransition>
-                {
-                    new() { FromState = WorkflowState.Planning, ToState = WorkflowState.RequirementsAnalysis, RequiredRole = TeamMemberRole.ProductOwner, Order = 1 },
-                    new() { FromState = WorkflowState.RequirementsAnalysis, ToState = WorkflowState.ArchitecturalDesign, RequiredRole = TeamMemberRole.BusinessAnalyst, Order = 2 },
-                    new() { FromState = WorkflowState.ArchitecturalDesign, ToState = WorkflowState.Development, RequiredRole = TeamMemberRole.Architect, Order = 3 },
-                    new() { FromState = WorkflowState.Development, ToState = WorkflowState.QualityAssurance, RequiredRole = TeamMemberRole.Developer, Order = 4 },
-                    new() { FromState = WorkflowState.QualityAssurance, ToState = WorkflowState.Completed, RequiredRole = TeamMemberRole.QualityAssurance, Order = 5 }
-                }
-            },
+        context.WorkflowTransitions.AddRange(
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = standardWorkflowId, FromState = WorkflowState.Planning, ToState = WorkflowState.RequirementsAnalysis, RequiredRole = TeamMemberRole.ProductOwner, Order = 1, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = standardWorkflowId, FromState = WorkflowState.RequirementsAnalysis, ToState = WorkflowState.ArchitecturalDesign, RequiredRole = TeamMemberRole.BusinessAnalyst, Order = 2, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = standardWorkflowId, FromState = WorkflowState.ArchitecturalDesign, ToState = WorkflowState.Development, RequiredRole = TeamMemberRole.Architect, Order = 3, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = standardWorkflowId, FromState = WorkflowState.Development, ToState = WorkflowState.QualityAssurance, RequiredRole = TeamMemberRole.Developer, Order = 4, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = standardWorkflowId, FromState = WorkflowState.QualityAssurance, ToState = WorkflowState.Completed, RequiredRole = TeamMemberRole.QualityAssurance, Order = 5, CreatedAt = DateTime.UtcNow }
+        );
 
-            // Full SDLC: PO → BA → Architect → UX → Dev → QA → Done
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Full SDLC",
-                Description = "Full workflow with UX: Planning → Requirements → Architecture → UX Design → Development → QA → Done",
-                IsDefault = true,
-                Transitions = new List<WorkflowTransition>
-                {
-                    new() { FromState = WorkflowState.Planning, ToState = WorkflowState.RequirementsAnalysis, RequiredRole = TeamMemberRole.ProductOwner, Order = 1 },
-                    new() { FromState = WorkflowState.RequirementsAnalysis, ToState = WorkflowState.ArchitecturalDesign, RequiredRole = TeamMemberRole.BusinessAnalyst, Order = 2 },
-                    new() { FromState = WorkflowState.ArchitecturalDesign, ToState = WorkflowState.UXDesign, RequiredRole = TeamMemberRole.Architect, Order = 3 },
-                    new() { FromState = WorkflowState.UXDesign, ToState = WorkflowState.Development, RequiredRole = TeamMemberRole.UXDesigner, Order = 4 },
-                    new() { FromState = WorkflowState.Development, ToState = WorkflowState.QualityAssurance, RequiredRole = TeamMemberRole.Developer, Order = 5 },
-                    new() { FromState = WorkflowState.QualityAssurance, ToState = WorkflowState.Completed, RequiredRole = TeamMemberRole.QualityAssurance, Order = 6 }
-                }
-            }
-        };
-
-        context.Workflows.AddRange(workflows);
-        return System.Threading.Tasks.Task.CompletedTask;
-    }
-
-    private static System.Threading.Tasks.Task SeedDefaultApiKeysAsync(StellarAnvilDbContext context)
-    {
-        var apiKeys = new List<ApiKey>
+        // Simple workflow: PO -> BA -> Dev -> QA -> Done
+        context.Workflows.Add(new Workflow
         {
-            new()
+            Id = simpleWorkflowId,
+            Name = "Simple SDLC Workflow",
+            Description = "Simplified software development lifecycle for small changes",
+            IsDefault = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        context.WorkflowTransitions.AddRange(
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = simpleWorkflowId, FromState = WorkflowState.Planning, ToState = WorkflowState.RequirementsAnalysis, RequiredRole = TeamMemberRole.ProductOwner, Order = 1, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = simpleWorkflowId, FromState = WorkflowState.RequirementsAnalysis, ToState = WorkflowState.Development, RequiredRole = TeamMemberRole.BusinessAnalyst, Order = 2, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = simpleWorkflowId, FromState = WorkflowState.Development, ToState = WorkflowState.QualityAssurance, RequiredRole = TeamMemberRole.Developer, Order = 3, CreatedAt = DateTime.UtcNow },
+            new WorkflowTransition { Id = Guid.NewGuid(), WorkflowId = simpleWorkflowId, FromState = WorkflowState.QualityAssurance, ToState = WorkflowState.Completed, RequiredRole = TeamMemberRole.QualityAssurance, Order = 4, CreatedAt = DateTime.UtcNow }
+        );
+
+        // Seed default API keys
+        context.ApiKeys.AddRange(
+            new ApiKey
             {
-                Id = Guid.NewGuid(),
-                Key = "admin-key-" + Guid.NewGuid().ToString("N")[..16],
+                Id = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+                Key = "sk-admin-" + Guid.NewGuid().ToString("N"),
                 Type = ApiKeyType.Admin,
                 Name = "Default Admin Key",
-                IsActive = true
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
             },
-            new()
+            new ApiKey
             {
-                Id = Guid.NewGuid(),
-                Key = "openapi-key-" + Guid.NewGuid().ToString("N")[..16],
+                Id = Guid.Parse("55555555-5555-5555-5555-555555555555"),
+                Key = "sk-openapi-" + Guid.NewGuid().ToString("N"),
                 Type = ApiKeyType.OpenApi,
                 Name = "Default OpenAPI Key",
-                IsActive = true
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
             }
-        };
+        );
 
-        context.ApiKeys.AddRange(apiKeys);
-        return System.Threading.Tasks.Task.CompletedTask;
+        await context.SaveChangesAsync();
     }
 }

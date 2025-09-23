@@ -1,3 +1,4 @@
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // PostgreSQL database
@@ -5,7 +6,8 @@ var postgres = builder.AddPostgres("postgres")
     .WithImage("postgres", "16")
     .WithEnvironment("POSTGRES_DB", "stellaranvil")
     .WithEnvironment("POSTGRES_USER", "stellaranvil")
-    .WithEnvironment("POSTGRES_PASSWORD", "stellaranvil123");
+    .WithEnvironment("POSTGRES_PASSWORD", "stellaranvil123")
+    .WithEnvironment("POSTGRES_PORT", "5433");
 
 var stellaranvildb = postgres.AddDatabase("stellaranvildb");
 
@@ -33,6 +35,9 @@ var jaeger = builder.AddContainer("jaeger", "jaegertracing/all-in-one", "latest"
 var api = builder.AddProject<Projects.StellarAnvil_Api>("stellaranvil-api")
     .WithReference(stellaranvildb)
     .WithEnvironment("ConnectionStrings__DefaultConnection", stellaranvildb)
+    .WithEnvironment("ASPNETCORE_URLS", "https://localhost:15888;http://localhost:15889")
+    .WithEnvironment("DOTNET_DASHBOARD_OTLP_ENDPOINT_URL", "https://localhost:16090")
+    .WithEnvironment("ASPIRE_ALLOW_UNSECURED_TRANSPORT", "true")
     .WithHttpEndpoint(port: 5000, targetPort: 8080, name: "stellaranvil-http")
     .WithHttpsEndpoint(port: 5001, targetPort: 8081, name: "stellaranvil-https");
 

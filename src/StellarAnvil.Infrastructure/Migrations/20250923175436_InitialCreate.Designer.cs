@@ -12,8 +12,8 @@ using StellarAnvil.Infrastructure.Data;
 namespace StellarAnvil.Infrastructure.Migrations
 {
     [DbContext(typeof(StellarAnvilDbContext))]
-    [Migration("20250920104746_SeedDefaultData")]
-    partial class SeedDefaultData
+    [Migration("20250923175436_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -67,18 +67,18 @@ namespace StellarAnvil.Infrastructure.Migrations
                         new
                         {
                             Id = new Guid("44444444-4444-4444-4444-444444444444"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 992, DateTimeKind.Utc).AddTicks(440),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 677, DateTimeKind.Utc).AddTicks(4700),
                             IsActive = true,
-                            Key = "sk-admin-d7d994a8004e4fc9bae8fe6e57508f21",
+                            Key = "sk-admin-5ff4ac7fb8fb46b68a8f3d105c4c1d3e",
                             Name = "Default Admin Key",
                             Type = 1
                         },
                         new
                         {
                             Id = new Guid("55555555-5555-5555-5555-555555555555"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 992, DateTimeKind.Utc).AddTicks(650),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 677, DateTimeKind.Utc).AddTicks(4850),
                             IsActive = true,
-                            Key = "sk-openapi-a1fc7b6261d24c6cb383904db8d4561d",
+                            Key = "sk-openapi-42638e03f1be4473b374283048eebb7a",
                             Name = "Default OpenAPI Key",
                             Type = 2
                         });
@@ -100,9 +100,6 @@ namespace StellarAnvil.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("Configuration")
-                        .HasColumnType("jsonb");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -113,6 +110,10 @@ namespace StellarAnvil.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Settings")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("Type")
                         .IsRequired()
@@ -236,10 +237,10 @@ namespace StellarAnvil.Infrastructure.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
-                    b.Property<string>("SystemPromptFile")
+                    b.Property<string>("SystemPrompt")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
 
                     b.Property<int>("Type")
                         .HasColumnType("integer");
@@ -295,29 +296,29 @@ namespace StellarAnvil.Infrastructure.Migrations
                         new
                         {
                             Id = new Guid("11111111-1111-1111-1111-111111111111"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 990, DateTimeKind.Utc).AddTicks(6240),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(2260),
                             Description = "Complete software development lifecycle with all phases",
                             IsDefault = true,
                             Name = "Full SDLC Workflow",
-                            UpdatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 990, DateTimeKind.Utc).AddTicks(6390)
+                            UpdatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(2400)
                         },
                         new
                         {
                             Id = new Guid("22222222-2222-2222-2222-222222222222"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2370),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7560),
                             Description = "Standard software development lifecycle without UX design",
                             IsDefault = true,
                             Name = "Standard SDLC Workflow",
-                            UpdatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2370)
+                            UpdatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7560)
                         },
                         new
                         {
                             Id = new Guid("33333333-3333-3333-3333-333333333333"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2480),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7720),
                             Description = "Simplified software development lifecycle for small changes",
                             IsDefault = true,
                             Name = "Simple SDLC Workflow",
-                            UpdatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2480)
+                            UpdatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7720)
                         });
                 });
 
@@ -355,8 +356,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                     b.HasData(
                         new
                         {
-                            Id = new Guid("d787537d-d9f1-4af9-93a2-df6fc030311b"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2020),
+                            Id = new Guid("849c451d-a904-4cea-b950-b0f915e88f17"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7290),
                             FromState = 1,
                             Order = 1,
                             RequiredRole = 1,
@@ -365,8 +366,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("aa84c04a-4aad-4bfa-a4dc-6ba6e8a3dc4a"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2240),
+                            Id = new Guid("cabc4b4e-e02f-4e19-8832-9632542864f4"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7430),
                             FromState = 2,
                             Order = 2,
                             RequiredRole = 2,
@@ -375,8 +376,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("25037b20-3ed2-4256-808d-54a6955ec8bd"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2240),
+                            Id = new Guid("170f122a-c079-4be0-b11c-3d4eab29940c"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7440),
                             FromState = 3,
                             Order = 3,
                             RequiredRole = 3,
@@ -385,8 +386,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("921140f8-ef12-42c1-a4a5-9fa9ae4782cb"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2250),
+                            Id = new Guid("78b7310f-8c26-48fe-8f22-4be937b717d3"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7440),
                             FromState = 4,
                             Order = 4,
                             RequiredRole = 4,
@@ -395,8 +396,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("b96d5df0-7789-46ec-930d-48bfd024eca0"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2260),
+                            Id = new Guid("95cf06f3-94fc-46f3-9939-984325d342f7"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7450),
                             FromState = 5,
                             Order = 5,
                             RequiredRole = 5,
@@ -405,8 +406,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("2cc41108-121e-4e1f-83dc-cbc079e1870f"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2270),
+                            Id = new Guid("07cee5a3-57c0-4f9c-9514-18cfbdcb28e0"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7460),
                             FromState = 6,
                             Order = 6,
                             RequiredRole = 6,
@@ -415,8 +416,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("18cbd108-a2c0-4290-8d5d-4769fdfd6155"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2430),
+                            Id = new Guid("bf9ebbef-29a8-42aa-b010-3776637c9953"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7610),
                             FromState = 1,
                             Order = 1,
                             RequiredRole = 1,
@@ -425,8 +426,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("62ab0e6c-5a9c-4f07-a19d-f52adb81337f"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2430),
+                            Id = new Guid("5605854f-b9bb-4a31-a220-6b739c723e0a"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7620),
                             FromState = 2,
                             Order = 2,
                             RequiredRole = 2,
@@ -435,8 +436,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("59ea646d-1663-4516-8a26-761112b0eaf9"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2440),
+                            Id = new Guid("a6fba73c-6681-4464-94c5-2c3f156bbdb8"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7630),
                             FromState = 3,
                             Order = 3,
                             RequiredRole = 3,
@@ -445,8 +446,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("08d562ca-6018-4fd9-a3a6-8aa4976f9bcd"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2450),
+                            Id = new Guid("ca807a9e-613e-44d7-8931-f53becd82214"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7640),
                             FromState = 5,
                             Order = 4,
                             RequiredRole = 5,
@@ -455,8 +456,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("df52e2a5-158a-4484-af8d-b344deb7aa77"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2450),
+                            Id = new Guid("31487040-28f9-44e4-805d-8f77fd3ac064"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7640),
                             FromState = 6,
                             Order = 5,
                             RequiredRole = 6,
@@ -465,8 +466,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("1034ad6a-09f3-4793-9905-c6f4c48e25a0"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2500),
+                            Id = new Guid("bf366279-3a28-41b0-a64c-d3c6d56e651a"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7740),
                             FromState = 1,
                             Order = 1,
                             RequiredRole = 1,
@@ -475,8 +476,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("f6a960f0-00f0-4d94-871e-06b672f430c4"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2510),
+                            Id = new Guid("9024b3d0-c31b-4aa5-9e57-fb9217431b33"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7750),
                             FromState = 2,
                             Order = 2,
                             RequiredRole = 2,
@@ -485,8 +486,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("9e5094e1-8f85-46a2-ad74-b620c2c793a7"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2520),
+                            Id = new Guid("caa165d8-d5a6-4f3c-872b-7587d3362c6e"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7760),
                             FromState = 5,
                             Order = 3,
                             RequiredRole = 5,
@@ -495,8 +496,8 @@ namespace StellarAnvil.Infrastructure.Migrations
                         },
                         new
                         {
-                            Id = new Guid("a52c9bfb-c662-4820-87f9-3dcf2d38a842"),
-                            CreatedAt = new DateTime(2025, 9, 20, 10, 47, 45, 991, DateTimeKind.Utc).AddTicks(2520),
+                            Id = new Guid("370668fb-c143-4906-aa46-3e4552eeed98"),
+                            CreatedAt = new DateTime(2025, 9, 23, 17, 54, 35, 676, DateTimeKind.Utc).AddTicks(7770),
                             FromState = 6,
                             Order = 4,
                             RequiredRole = 6,
