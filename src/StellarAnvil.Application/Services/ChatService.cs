@@ -4,6 +4,7 @@ using StellarAnvil.Application.DTOs;
 using StellarAnvil.Application.DTOs.OpenAI;
 using StellarAnvil.Domain.Services;
 using StellarAnvil.Domain.Enums;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -15,16 +16,62 @@ public class ChatService : IChatService
     private readonly ITeamMemberService _teamMemberService;
     private readonly IAIClientService _aiClientService;
     private readonly ITaskApplicationService _taskApplicationService;
+    private readonly AutoGenCollaborationService _collaborationService;
 
-    public ChatService(Kernel kernel, ITeamMemberService teamMemberService, IAIClientService aiClientService, ITaskApplicationService taskApplicationService)
+    public ChatService(Kernel kernel, ITeamMemberService teamMemberService, IAIClientService aiClientService, ITaskApplicationService taskApplicationService, AutoGenCollaborationService collaborationService)
     {
         _kernel = kernel;
         _teamMemberService = teamMemberService;
         _aiClientService = aiClientService;
         _taskApplicationService = taskApplicationService;
+        _collaborationService = collaborationService;
     }
 
     public async Task<ChatCompletionResponse> ProcessChatCompletionAsync(ChatCompletionRequest request)
+    {
+        // If streaming is requested, we shouldn't be here - but handle it gracefully
+        if (request.Stream)
+        {
+            // Convert streaming to non-streaming response
+            var chunks = new List<ChatCompletionChunk>();
+            await foreach (var chunk in ProcessChatCompletionStreamAsync(request))
+            {
+                chunks.Add(chunk);
+            }
+            
+            // Combine all chunks into a single response
+            var combinedContent = string.Join("", chunks
+                .SelectMany(c => c.Choices)
+                .Where(c => c.Delta.Content != null)
+                .Select(c => c.Delta.Content));
+            
+            var lastChunk = chunks.LastOrDefault();
+            return new ChatCompletionResponse
+            {
+                Id = lastChunk?.Id ?? $"chatcmpl-{Guid.NewGuid():N}",
+                Created = lastChunk?.Created ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Model = request.Model,
+                Choices = new List<Choice>
+                {
+                    new()
+                    {
+                        Index = 0,
+                        Message = new DTOs.OpenAI.ChatMessage
+                        {
+                            Role = "assistant",
+                            Content = combinedContent
+                        },
+                        FinishReason = "stop"
+                    }
+                },
+                Usage = lastChunk?.Usage ?? new Usage()
+            };
+        }
+        
+        return await ProcessChatCompletionInternalAsync(request);
+    }
+    
+    private async Task<ChatCompletionResponse> ProcessChatCompletionInternalAsync(ChatCompletionRequest request)
     {
         // Extract user name from the first user message
         var userName = await ExtractUserNameFromMessages(request.Messages);
@@ -250,22 +297,21 @@ If just conversation, respond normally and be helpful.";
             var createTaskDto = new CreateTaskDto { Description = description };
             var createdTask = await _taskApplicationService.CreateAsync(createTaskDto);
 
-            // Assign to appropriate team member based on workflow
-            var assignedMember = await AssignTaskToTeamMember(createdTask.Id, workflowName);
+            // Start AutoGen collaboration for the task
+            var collaborationResult = await _collaborationService.CollaborateAsync(
+                createdTask.Id, 
+                TeamMemberRole.BusinessAnalyst, // Always start with BA
+                description, 
+                "Starting requirements analysis for this task...");
 
-            if (assignedMember == null)
+            if (!collaborationResult.Success)
             {
-                return CreateErrorResponse("Sorry, no team members are available right now. Please try again later.");
+                return CreateErrorResponse(collaborationResult.Message);
             }
 
-            // Create response message
-            var responseMessage = $@"Hey {teamMember.Name}! I got your task and here's the breakdown:
-
-**Task #{createdTask.Id}**: {description}
-**Workflow**: {workflowName}
-**Reasoning**: {reasoning}
-
-I've assigned **{assignedMember.Name}** ({assignedMember.Role} - {assignedMember.Grade}) to work on this task. They'll start working on it now and may ask you questions for clarification.";
+            // Build the complete streaming response showing the full collaboration
+            var responseMessage = BuildCollaborationResponse(
+                teamMember, createdTask, workflowName, reasoning, collaborationResult);
 
             return new ChatCompletionResponse
             {
@@ -297,6 +343,130 @@ I've assigned **{assignedMember.Name}** ({assignedMember.Role} - {assignedMember
         {
             return CreateErrorResponse($"Sorry, I had trouble processing your task request: {ex.Message}");
         }
+    }
+
+    private string BuildCollaborationResponse(
+        Domain.Entities.TeamMember requester, 
+        TaskDto task, 
+        string workflowName, 
+        string reasoning, 
+        CollaborationResult collaboration)
+    {
+        var response = new StringBuilder();
+        
+        // Initial acknowledgment
+        response.AppendLine($"Hey {requester.Name}! I got your task and here's the breakdown:");
+        response.AppendLine();
+        response.AppendLine($"**Task #{task.Id}**: {task.Description}");
+        response.AppendLine($"**Workflow**: {workflowName}");
+        response.AppendLine($"**Reasoning**: {reasoning}");
+        response.AppendLine();
+        response.AppendLine($"I've assigned **{collaboration.AssignedMember?.Name}** ({collaboration.AssignedMember?.Role} - {collaboration.AssignedMember?.Grade}) to work on this task.");
+        
+        if (collaboration.ReviewingMember != null)
+        {
+            response.AppendLine($"**{collaboration.ReviewingMember.Name}** ({collaboration.ReviewingMember.Role} - {collaboration.ReviewingMember.Grade}) will review the work.");
+        }
+        
+        response.AppendLine();
+        response.AppendLine("---");
+        response.AppendLine();
+
+        // Show the collaboration process
+        if (collaboration.CollaborationHistory.Any())
+        {
+            response.AppendLine("**Team Collaboration:**");
+            response.AppendLine();
+            
+            foreach (var message in collaboration.CollaborationHistory)
+            {
+                response.AppendLine($"**{message.Sender} ({message.Role})**:");
+                response.AppendLine(message.Content);
+                response.AppendLine();
+            }
+            
+            response.AppendLine("---");
+            response.AppendLine();
+        }
+
+        // Final deliverable
+        response.AppendLine("**Final Requirements Analysis:**");
+        response.AppendLine(collaboration.FinalOutput);
+        response.AppendLine();
+        response.AppendLine("Is this what you were looking for? If you need any changes or have questions, just let me know!");
+
+        return response.ToString();
+    }
+
+    public async IAsyncEnumerable<ChatCompletionChunk> ProcessChatCompletionStreamAsync(ChatCompletionRequest request)
+    {
+        var chatId = $"chatcmpl-{Guid.NewGuid():N}";
+        var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        
+        // First chunk - role
+        yield return new ChatCompletionChunk
+        {
+            Id = chatId,
+            Created = created,
+            Model = request.Model,
+            Choices = new List<ChoiceDelta>
+            {
+                new()
+                {
+                    Index = 0,
+                    Delta = new MessageDelta { Role = "assistant" }
+                }
+            }
+        };
+
+        // Get the non-streaming response
+        var fullResponse = await ProcessChatCompletionInternalAsync(request);
+        var content = fullResponse.Choices.FirstOrDefault()?.Message?.Content ?? "";
+        
+        // Stream the content in chunks (simulating real-time typing)
+        var words = content.Split(' ');
+        var currentText = "";
+        
+        foreach (var word in words)
+        {
+            currentText += (currentText.Length > 0 ? " " : "") + word;
+            
+            yield return new ChatCompletionChunk
+            {
+                Id = chatId,
+                Created = created,
+                Model = request.Model,
+                Choices = new List<ChoiceDelta>
+                {
+                    new()
+                    {
+                        Index = 0,
+                        Delta = new MessageDelta { Content = (currentText.Length > 0 ? " " : "") + word }
+                    }
+                }
+            };
+            
+            // Small delay to simulate real-time streaming
+            await Task.Delay(50);
+        }
+        
+        // Final chunk with finish reason
+        yield return new ChatCompletionChunk
+        {
+            Id = chatId,
+            Created = created,
+            Model = request.Model,
+            Choices = new List<ChoiceDelta>
+            {
+                new()
+                {
+                    Index = 0,
+                    Delta = new MessageDelta(),
+                    FinishReason = "stop"
+                }
+            },
+            Usage = fullResponse.Usage
+        };
     }
 
     private async Task<Domain.Entities.TeamMember?> AssignTaskToTeamMember(Guid taskId, string workflowName)

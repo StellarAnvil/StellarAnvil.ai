@@ -4,6 +4,8 @@ using StellarAnvil.Api.Observability;
 using StellarAnvil.Application.DTOs.OpenAI;
 using StellarAnvil.Application.Services;
 using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 
 namespace StellarAnvil.Api.Controllers.OpenAI;
 
@@ -25,7 +27,7 @@ public class ChatController : ControllerBase
     /// Create a chat completion (OpenAI compatible)
     /// </summary>
     [HttpPost("chat/completions")]
-    public async Task<ActionResult<ChatCompletionResponse>> CreateChatCompletion([FromBody] ChatCompletionRequest request)
+    public async Task<IActionResult> CreateChatCompletion([FromBody] ChatCompletionRequest request)
     {
         using var activity = ActivitySources.AI.StartAIActivity("ChatCompletion", request.Model);
         var stopwatch = Stopwatch.StartNew();
@@ -38,26 +40,22 @@ public class ChatController : ControllerBase
                 return BadRequest(new { error = new { message = "Messages are required" } });
             }
 
-            _logger.LogInformation("Processing chat completion request with {MessageCount} messages using model {Model}", 
-                request.Messages.Count, request.Model);
+            _logger.LogInformation("Processing chat completion request with {MessageCount} messages using model {Model} (streaming: {Streaming})", 
+                request.Messages.Count, request.Model, request.Stream);
 
             activity?.SetTag("ai.request.message_count", request.Messages.Count);
             activity?.SetTag("ai.request.temperature", request.Temperature);
             activity?.SetTag("ai.request.max_tokens", request.MaxTokens);
+            activity?.SetTag("ai.request.stream", request.Stream);
 
-            var response = await _chatService.ProcessChatCompletionAsync(request);
-            
-            stopwatch.Stop();
-            Metrics.ChatCompletions.Add(1, new KeyValuePair<string, object?>("model", request.Model));
-            Metrics.ChatCompletionDuration.Record(stopwatch.Elapsed.TotalSeconds, 
-                new KeyValuePair<string, object?>("model", request.Model));
-
-            activity?.SetTag("ai.response.finish_reason", response.Choices.FirstOrDefault()?.FinishReason);
-            activity?.SetTag("ai.response.usage.total_tokens", response.Usage?.TotalTokens);
-
-            _logger.LogInformation("Chat completion processed successfully in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-            
-            return Ok(response);
+            if (request.Stream)
+            {
+                return await ProcessStreamingRequest(request, activity, stopwatch);
+            }
+            else
+            {
+                return await ProcessNonStreamingRequest(request, activity, stopwatch);
+            }
         }
         catch (Exception ex)
         {
@@ -67,6 +65,76 @@ public class ChatController : ControllerBase
             
             return StatusCode(500, new { error = new { message = ex.Message } });
         }
+    }
+
+    private async Task<IActionResult> ProcessNonStreamingRequest(
+        ChatCompletionRequest request, 
+        Activity? activity, 
+        Stopwatch stopwatch)
+    {
+        var response = await _chatService.ProcessChatCompletionAsync(request);
+        
+        stopwatch.Stop();
+        Metrics.ChatCompletions.Add(1, new KeyValuePair<string, object?>("model", request.Model));
+        Metrics.ChatCompletionDuration.Record(stopwatch.Elapsed.TotalSeconds, 
+            new KeyValuePair<string, object?>("model", request.Model));
+
+        activity?.SetTag("ai.response.finish_reason", response.Choices.FirstOrDefault()?.FinishReason);
+        activity?.SetTag("ai.response.usage.total_tokens", response.Usage?.TotalTokens);
+
+        _logger.LogInformation("Chat completion processed successfully in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+        
+        return Ok(response);
+    }
+
+    private async Task<IActionResult> ProcessStreamingRequest(
+        ChatCompletionRequest request, 
+        Activity? activity, 
+        Stopwatch stopwatch)
+    {
+        Response.ContentType = "text/event-stream";
+        Response.Headers.Add("Cache-Control", "no-cache");
+        Response.Headers.Add("Connection", "keep-alive");
+
+        var responseStream = Response.Body;
+        var writer = new StreamWriter(responseStream, Encoding.UTF8, leaveOpen: true);
+
+        try
+        {
+            await foreach (var chunk in _chatService.ProcessChatCompletionStreamAsync(request))
+            {
+                var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                });
+                
+                await writer.WriteLineAsync($"data: {json}");
+                await writer.FlushAsync();
+            }
+
+            // Send the final [DONE] message
+            await writer.WriteLineAsync("data: [DONE]");
+            await writer.FlushAsync();
+
+            stopwatch.Stop();
+            Metrics.ChatCompletions.Add(1, new KeyValuePair<string, object?>("model", request.Model));
+            Metrics.ChatCompletionDuration.Record(stopwatch.Elapsed.TotalSeconds, 
+                new KeyValuePair<string, object?>("model", request.Model));
+
+            _logger.LogInformation("Streaming chat completion processed successfully in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during streaming response");
+            await writer.WriteLineAsync($"data: {{\"error\": {{\"message\": \"{ex.Message}\"}}}}");
+            await writer.FlushAsync();
+        }
+        finally
+        {
+            await writer.DisposeAsync();
+        }
+
+        return new EmptyResult();
     }
 
     /// <summary>

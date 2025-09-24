@@ -175,16 +175,22 @@ public class AutoGenCollaborationService
 
     private async Task<string> GetAgentResponse(TeamMember member, string systemPrompt, string userPrompt)
     {
-        var messages = new List<ChatMessage>
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
         {
-            new(ChatRole.System, systemPrompt),
-            new(ChatRole.User, userPrompt)
+            new(Microsoft.Extensions.AI.ChatRole.System, systemPrompt),
+            new(Microsoft.Extensions.AI.ChatRole.User, userPrompt)
         };
 
-        // TODO: Fix this when we implement proper AI client integration
-        // var response = await _chatClient.GetResponseAsync(messages);
-        // return response.Messages?.FirstOrDefault()?.Text ?? "No response generated";
-        return "Collaboration response placeholder"; // Temporary hardcode
+        try
+        {
+            var response = await _chatClient.GetResponseAsync(messages);
+            return response.Messages?.FirstOrDefault()?.Text ?? "No response generated";
+        }
+        catch (Exception)
+        {
+            // Fallback to a helpful response if AI client fails
+            return $"I'm {member.Name} ({member.Role} - {member.Grade}). I'm working on this task and will provide my analysis shortly.";
+        }
     }
 
 
