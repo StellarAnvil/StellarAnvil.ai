@@ -10,9 +10,9 @@
             "request": "launch",
             "preLaunchTask": "build",
             // If you have changed target frameworks, make sure to update the program path.
-            "program": "${workspaceFolder}/src/StellarAnvil.AppHost/bin/Debug/net9.0/StellarAnvil.AppHost.dll",
+            "program": "${workspaceFolder}/src/StellarAnvil.Api/bin/Debug/net9.0/StellarAnvil.Api.dll",
             "args": [],
-            "cwd": "${workspaceFolder}/src/StellarAnvil.AppHost",
+            "cwd": "${workspaceFolder}/src/StellarAnvil.Api",
             // For more information about the 'console' field, see https://aka.ms/VSCode-CS-LaunchJson-Console
             "console": "internalConsole",
             "stopAtEntry": false

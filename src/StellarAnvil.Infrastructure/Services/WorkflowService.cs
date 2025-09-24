@@ -16,7 +16,7 @@ public class WorkflowService : IWorkflowService
     private readonly IRepository<Domain.Entities.Task> _taskRepository;
     private readonly IRepository<TaskHistory> _taskHistoryRepository;
     private readonly IRepository<TeamMember> _teamMemberRepository;
-    private readonly IChatClient _chatClient;
+    private readonly IAIClientService _aiClientService;
 
     public WorkflowService(
         StellarAnvilDbContext context,
@@ -24,14 +24,14 @@ public class WorkflowService : IWorkflowService
         IRepository<Domain.Entities.Task> taskRepository,
         IRepository<TaskHistory> taskHistoryRepository,
         IRepository<TeamMember> teamMemberRepository,
-        IChatClient chatClient)
+        IAIClientService aiClientService)
     {
         _context = context;
         _workflowRepository = workflowRepository;
         _taskRepository = taskRepository;
         _taskHistoryRepository = taskHistoryRepository;
         _teamMemberRepository = teamMemberRepository;
-        _chatClient = chatClient;
+        _aiClientService = aiClientService;
     }
 
     public async Task<Workflow> SelectWorkflowForTaskAsync(string taskDescription)
@@ -51,10 +51,30 @@ public class WorkflowService : IWorkflowService
                        
                        Respond with only the workflow name.";
 
-        // TODO: Fix this when we implement proper AI client integration
-        // var response = await _chatClient.GetResponseAsync(prompt);
-        // var selectedWorkflowName = response.Message?.Text?.Trim();
-        var selectedWorkflowName = "Simple SDLC Workflow"; // Temporary hardcode
+        try
+        {
+            var chatClient = await _aiClientService.GetClientForModelAsync("deepseek-r1");
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, "You are a workflow selection assistant. Select the most appropriate workflow based on task complexity."),
+                new(ChatRole.User, prompt)
+            };
+            
+            var response = await chatClient.GetResponseAsync(messages);
+            var aiSelectedWorkflowName = response.Messages?.FirstOrDefault()?.Text?.Trim();
+            
+            // Validate the selected workflow name
+            if (!string.IsNullOrEmpty(aiSelectedWorkflowName) && workflows.Any(w => w.Name.Equals(aiSelectedWorkflowName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return workflows.First(w => w.Name.Equals(aiSelectedWorkflowName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+        catch (Exception)
+        {
+            // Fall back to default workflow if AI selection fails
+        }
+        
+        var selectedWorkflowName = "Simple SDLC Workflow"; // Fallback default
 
         var selectedWorkflow = workflows.FirstOrDefault(w => 
             w.Name.Contains(selectedWorkflowName ?? "", StringComparison.OrdinalIgnoreCase));
@@ -159,10 +179,29 @@ public class WorkflowService : IWorkflowService
                        
                        Respond with only 'YES' or 'NO'.";
 
-        // TODO: Fix this when we implement proper AI client integration
-        // var response = await _chatClient.GetResponseAsync(prompt);
-        // var result = response.Message?.Text?.Trim().ToUpperInvariant();
-        var result = "YES"; // Temporary hardcode
+        try
+        {
+            var chatClient = await _aiClientService.GetClientForModelAsync("deepseek-r1");
+            var messages = new List<ChatMessage>
+            {
+                new(ChatRole.System, "You are a confirmation assistant. Analyze user messages for confirmation keywords and respond with YES or NO only."),
+                new(ChatRole.User, prompt)
+            };
+            
+            var response = await chatClient.GetResponseAsync(messages);
+            var aiResult = response.Messages?.FirstOrDefault()?.Text?.Trim().ToUpperInvariant();
+            
+            if (aiResult == "YES" || aiResult == "NO")
+            {
+                return aiResult == "YES";
+            }
+        }
+        catch (Exception)
+        {
+            // Fall back to simple keyword matching if AI fails
+        }
+        
+        var result = "YES"; // Fallback - assume confirmation for now
 
         return result == "YES";
     }

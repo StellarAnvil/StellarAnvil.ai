@@ -12,16 +12,16 @@ namespace StellarAnvil.Application.Services;
 /// </summary>
 public class AutoGenCollaborationService
 {
-    private readonly IChatClient _chatClient;
+    private readonly IAIClientService _aiClientService;
     private readonly ITeamMemberService _teamMemberService;
     private readonly IWorkflowService _workflowService;
 
     public AutoGenCollaborationService(
-        IChatClient chatClient,
+        IAIClientService aiClientService,
         ITeamMemberService teamMemberService,
         IWorkflowService workflowService)
     {
-        _chatClient = chatClient;
+        _aiClientService = aiClientService;
         _teamMemberService = teamMemberService;
         _workflowService = workflowService;
     }
@@ -183,7 +183,8 @@ public class AutoGenCollaborationService
 
         try
         {
-            var response = await _chatClient.GetResponseAsync(messages);
+            var chatClient = await _aiClientService.GetClientForModelAsync(member.Model ?? "deepseek-r1");
+            var response = await chatClient.GetResponseAsync(messages);
             return response.Messages?.FirstOrDefault()?.Text ?? "No response generated";
         }
         catch (Exception)

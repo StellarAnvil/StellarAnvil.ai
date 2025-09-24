@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using StellarAnvil.Domain.Services;
 using StellarAnvil.Infrastructure.AI;
 using System.Text.Json;
 using System.Text;

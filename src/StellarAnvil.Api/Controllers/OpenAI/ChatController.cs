@@ -72,7 +72,41 @@ public class ChatController : ControllerBase
         Activity? activity, 
         Stopwatch stopwatch)
     {
-        var response = await _chatService.ProcessChatCompletionAsync(request);
+        // Collect all chunks from the async enumerable
+        var chunks = new List<ChatCompletionChunk>();
+        await foreach (var chunk in _chatService.ProcessChatCompletionAsync(request))
+        {
+            chunks.Add(chunk);
+        }
+        
+        // Convert chunks to a single response
+        var combinedContent = string.Join("", chunks
+            .SelectMany(c => c.Choices)
+            .Where(c => c.Delta.Content != null)
+            .Select(c => c.Delta.Content));
+        
+        var lastChunk = chunks.LastOrDefault();
+        var response = new ChatCompletionResponse
+        {
+            Id = lastChunk?.Id ?? $"chatcmpl-{Guid.NewGuid():N}",
+            Object = "chat.completion",
+            Created = lastChunk?.Created ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Model = request.Model,
+            Choices = new List<Choice>
+            {
+                new()
+                {
+                    Index = 0,
+                    Message = new ChatMessage
+                    {
+                        Role = "assistant",
+                        Content = combinedContent
+                    },
+                    FinishReason = lastChunk?.Choices?.FirstOrDefault()?.FinishReason ?? "stop"
+                }
+            },
+            Usage = lastChunk?.Usage ?? new Usage()
+        };
         
         stopwatch.Stop();
         Metrics.ChatCompletions.Add(1, new KeyValuePair<string, object?>("model", request.Model));
@@ -93,15 +127,15 @@ public class ChatController : ControllerBase
         Stopwatch stopwatch)
     {
         Response.ContentType = "text/event-stream";
-        Response.Headers.Add("Cache-Control", "no-cache");
-        Response.Headers.Add("Connection", "keep-alive");
+        Response.Headers.Append("Cache-Control", "no-cache");
+        Response.Headers.Append("Connection", "keep-alive");
 
         var responseStream = Response.Body;
         var writer = new StreamWriter(responseStream, Encoding.UTF8, leaveOpen: true);
 
         try
         {
-            await foreach (var chunk in _chatService.ProcessChatCompletionStreamAsync(request))
+            await foreach (var chunk in _chatService.ProcessChatCompletionAsync(request))
             {
                 var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
                 {

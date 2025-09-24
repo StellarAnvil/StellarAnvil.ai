@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace StellarAnvil.Application.Services;
+namespace StellarAnvil.Domain.Services;
 
 public interface IAIClientService
 {

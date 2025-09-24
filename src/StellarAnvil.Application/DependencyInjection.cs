@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<ContinueDevSkills>();
         services.AddScoped<JiraMcpSkills>();
         services.AddScoped<UxDesignSkills>();
+        services.AddScoped<TaskManagementSkills>();
         services.AddHttpClient<JiraMcpSkills>();
         services.AddHttpClient<McpConfigurationService>();
 
@@ -61,9 +62,11 @@ public static class DependencyInjection
             // Register skills
             var continueDevSkills = provider.GetRequiredService<ContinueDevSkills>();
             var jiraMcpSkills = provider.GetRequiredService<JiraMcpSkills>();
+            var taskManagementSkills = provider.GetRequiredService<TaskManagementSkills>();
             
             builder.Plugins.AddFromObject(continueDevSkills, "ContinueDevSkills");
             builder.Plugins.AddFromObject(jiraMcpSkills, "JiraMcpSkills");
+            builder.Plugins.AddFromObject(taskManagementSkills, "TaskManagementSkills");
 
             return builder.Build();
         });

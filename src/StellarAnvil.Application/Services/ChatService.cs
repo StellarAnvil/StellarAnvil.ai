@@ -27,29 +27,118 @@ public class ChatService : IChatService
         _collaborationService = collaborationService;
     }
 
-    public async Task<ChatCompletionResponse> ProcessChatCompletionAsync(ChatCompletionRequest request)
+    public async IAsyncEnumerable<ChatCompletionChunk> ProcessChatCompletionAsync(ChatCompletionRequest request)
     {
-        // If streaming is requested, we shouldn't be here - but handle it gracefully
-        if (request.Stream)
+        var chatId = $"chatcmpl-{Guid.NewGuid():N}";
+        var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        
+        // First chunk - role
+        yield return new ChatCompletionChunk
         {
-            // Convert streaming to non-streaming response
-            var chunks = new List<ChatCompletionChunk>();
-            await foreach (var chunk in ProcessChatCompletionStreamAsync(request))
+            Id = chatId,
+            Created = created,
+            Model = request.Model,
+            Choices = new List<ChoiceDelta>
             {
-                chunks.Add(chunk);
+                new()
+                {
+                    Index = 0,
+                    Delta = new MessageDelta { Role = "assistant" }
+                }
             }
+        };
+
+        // Get the full response using Semantic Kernel
+        var fullResponse = await ProcessChatCompletionWithSemanticKernelAsync(request);
+        var content = fullResponse.Choices.FirstOrDefault()?.Message?.Content ?? "";
+        
+        // Stream the content in chunks (simulating real-time typing)
+        var words = content.Split(' ');
+        
+        foreach (var word in words)
+        {
+            yield return new ChatCompletionChunk
+            {
+                Id = chatId,
+                Created = created,
+                Model = request.Model,
+                Choices = new List<ChoiceDelta>
+                {
+                    new()
+                    {
+                        Index = 0,
+                        Delta = new MessageDelta { Content = word + " " }
+                    }
+                }
+            };
             
-            // Combine all chunks into a single response
-            var combinedContent = string.Join("", chunks
-                .SelectMany(c => c.Choices)
-                .Where(c => c.Delta.Content != null)
-                .Select(c => c.Delta.Content));
+            // Small delay to simulate real-time streaming
+            await Task.Delay(50);
+        }
+        
+        // Final chunk with finish reason
+        yield return new ChatCompletionChunk
+        {
+            Id = chatId,
+            Created = created,
+            Model = request.Model,
+            Choices = new List<ChoiceDelta>
+            {
+                new()
+                {
+                    Index = 0,
+                    Delta = new MessageDelta(),
+                    FinishReason = "stop"
+                }
+            },
+            Usage = fullResponse.Usage
+        };
+    }
+    
+    private async Task<ChatCompletionResponse> ProcessChatCompletionWithSemanticKernelAsync(ChatCompletionRequest request)
+    {
+        try
+        {
+            // Convert OpenAI messages to SK ChatHistory
+            var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
             
-            var lastChunk = chunks.LastOrDefault();
+            foreach (var message in request.Messages)
+            {
+                var role = message.Role switch
+                {
+                    "system" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.System,
+                    "user" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User,
+                    "assistant" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.Assistant,
+                    _ => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User
+                };
+                chatHistory.AddMessage(role, message.Content ?? "");
+            }
+
+            // Enable automatic function calling
+            var executionSettings = new Microsoft.SemanticKernel.Connectors.OpenAI.OpenAIPromptExecutionSettings
+            {
+                ToolCallBehavior = Microsoft.SemanticKernel.Connectors.OpenAI.ToolCallBehavior.AutoInvokeKernelFunctions,
+                MaxTokens = 4000,
+                Temperature = 0.7
+            };
+
+            // Get chat completion service from kernel
+            var chatCompletionService = _kernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
+            
+            // Process with SK - this will automatically call functions if needed
+            var result = await chatCompletionService.GetChatMessageContentsAsync(
+                chatHistory, 
+                executionSettings, 
+                _kernel);
+            
+            var content = result.LastOrDefault()?.Content ?? "";
+
+            // Convert SK result back to OpenAI format
             return new ChatCompletionResponse
             {
-                Id = lastChunk?.Id ?? $"chatcmpl-{Guid.NewGuid():N}",
-                Created = lastChunk?.Created ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Id = $"chatcmpl-{Guid.NewGuid():N}",
+                Object = "chat.completion",
+                Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 Model = request.Model,
                 Choices = new List<Choice>
                 {
@@ -59,16 +148,23 @@ public class ChatService : IChatService
                         Message = new DTOs.OpenAI.ChatMessage
                         {
                             Role = "assistant",
-                            Content = combinedContent
+                            Content = content
                         },
                         FinishReason = "stop"
                     }
                 },
-                Usage = lastChunk?.Usage ?? new Usage()
+                Usage = new Usage
+                {
+                    PromptTokens = request.Messages.Sum(m => m.Content?.Length ?? 0) / 4,
+                    CompletionTokens = content.Length / 4,
+                    TotalTokens = (request.Messages.Sum(m => m.Content?.Length ?? 0) + content.Length) / 4
+                }
             };
         }
-        
-        return await ProcessChatCompletionInternalAsync(request);
+        catch (Exception ex)
+        {
+            return CreateErrorResponse($"Error processing request: {ex.Message}");
+        }
     }
     
     private async Task<ChatCompletionResponse> ProcessChatCompletionInternalAsync(ChatCompletionRequest request)
@@ -398,76 +494,6 @@ If just conversation, respond normally and be helpful.";
         return response.ToString();
     }
 
-    public async IAsyncEnumerable<ChatCompletionChunk> ProcessChatCompletionStreamAsync(ChatCompletionRequest request)
-    {
-        var chatId = $"chatcmpl-{Guid.NewGuid():N}";
-        var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        
-        // First chunk - role
-        yield return new ChatCompletionChunk
-        {
-            Id = chatId,
-            Created = created,
-            Model = request.Model,
-            Choices = new List<ChoiceDelta>
-            {
-                new()
-                {
-                    Index = 0,
-                    Delta = new MessageDelta { Role = "assistant" }
-                }
-            }
-        };
-
-        // Get the non-streaming response
-        var fullResponse = await ProcessChatCompletionInternalAsync(request);
-        var content = fullResponse.Choices.FirstOrDefault()?.Message?.Content ?? "";
-        
-        // Stream the content in chunks (simulating real-time typing)
-        var words = content.Split(' ');
-        var currentText = "";
-        
-        foreach (var word in words)
-        {
-            currentText += (currentText.Length > 0 ? " " : "") + word;
-            
-            yield return new ChatCompletionChunk
-            {
-                Id = chatId,
-                Created = created,
-                Model = request.Model,
-                Choices = new List<ChoiceDelta>
-                {
-                    new()
-                    {
-                        Index = 0,
-                        Delta = new MessageDelta { Content = (currentText.Length > 0 ? " " : "") + word }
-                    }
-                }
-            };
-            
-            // Small delay to simulate real-time streaming
-            await Task.Delay(50);
-        }
-        
-        // Final chunk with finish reason
-        yield return new ChatCompletionChunk
-        {
-            Id = chatId,
-            Created = created,
-            Model = request.Model,
-            Choices = new List<ChoiceDelta>
-            {
-                new()
-                {
-                    Index = 0,
-                    Delta = new MessageDelta(),
-                    FinishReason = "stop"
-                }
-            },
-            Usage = fullResponse.Usage
-        };
-    }
 
     private async Task<Domain.Entities.TeamMember?> AssignTaskToTeamMember(Guid taskId, string workflowName)
     {
