@@ -41,22 +41,41 @@ public static class DependencyInjection
         {
             var builder = Kernel.CreateBuilder();
             
+            // Check for OpenAI API key first (from user secrets, environment variables, or appsettings)
             var openAiApiKey = configuration["AI:OpenAI:ApiKey"];
-            if (!string.IsNullOrEmpty(openAiApiKey))
+            if (false)
             {
-                builder.AddOpenAIChatCompletion("gpt-4", openAiApiKey);
+                // Use OpenAI if API key is provided (supports function calling)
+                var openAiModel = configuration["AI:OpenAI:DefaultModel"] ?? "gpt-5-mini";
+                builder.AddOpenAIChatCompletion(openAiModel, openAiApiKey);
+            }
+            else
+            {
+                // Fallback to Ollama if no OpenAI API key
+                var ollamaBaseUrl = configuration["AI:Ollama:BaseUrl"] ?? "http://localhost:11434";
+#pragma warning disable SKEXP0010
+                builder.AddOpenAIChatCompletion(
+                    modelId: "Llama3.1:8B",
+                    apiKey: "not-needed", // Ollama doesn't require API key
+                    endpoint: new Uri($"{ollamaBaseUrl}/v1"));
+#pragma warning restore SKEXP0010
             }
 
+            // Add Claude support if API key is provided
             var claudeApiKey = configuration["AI:Claude:ApiKey"];
             if (!string.IsNullOrEmpty(claudeApiKey))
             {
-                // Add Claude connector when available
+                // Add Claude connector when available in future SK versions
+                // builder.AddAnthropicChatCompletion("claude-3-sonnet-20240229", claudeApiKey);
             }
 
+            // Add Gemini support if API key is provided
             var geminiApiKey = configuration["AI:Gemini:ApiKey"];
             if (!string.IsNullOrEmpty(geminiApiKey))
             {
-                // Add Gemini connector when available
+                // TODO: Add Gemini connector when the correct package version is available
+                // var geminiModel = configuration["AI:Gemini:DefaultModel"] ?? "gemini-pro";
+                // builder.AddGoogleAIChatCompletion(geminiModel, geminiApiKey);
             }
 
             // Register skills

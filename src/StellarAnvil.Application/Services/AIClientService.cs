@@ -26,8 +26,8 @@ public class AIClientService : IAIClientService
 
     public async Task<IChatClient> GetClientForModelAsync(string? model)
     {
-        // Default to deepseek-r1 if no model specified
-        model = model ?? "deepseek-r1";
+        // Default to Llama3.1:8B if no model specified
+        model = model ?? "Llama3.1:8B";
         
         _logger.LogInformation("Getting client for model: {Model}", model);
 
@@ -62,7 +62,7 @@ public class AIClientService : IAIClientService
             return CreateGeminiClient(apiKey, model);
         }
         
-        // Default to Ollama for any other model (including deepseek-r1)
+        // Default to Ollama for any other model (including Llama3.1:8B)
         return CreateOllamaClient(model);
     }
 
@@ -85,11 +85,11 @@ public class AIClientService : IAIClientService
         // Add Gemini models if API key is configured
         if (!string.IsNullOrEmpty(_configuration["AI:Gemini:ApiKey"]))
         {
-            models.AddRange(new[] { "gemini-pro", "gemini-pro-vision" });
+            models.AddRange(new[] { "gemini-pro", "gemini-pro-vision", "gemini-1.5-pro", "gemini-1.5-flash" });
         }
         
         // Always add Ollama models (no API key needed)
-        models.AddRange(new[] { "deepseek-r1", "llama3", "codellama" });
+        models.AddRange(new[] { "Llama3.1:8B", "llama3", "codellama" });
         
         return models;
     }
@@ -125,9 +125,9 @@ public class AIClientService : IAIClientService
     
     private IChatClient CreateGeminiClient(string apiKey, string model)
     {
-        // TODO: Implement Gemini client
-        // For now, throw not implemented  
-        throw new NotImplementedException("Gemini client not yet implemented");
+        // TODO: Implement Gemini client using Microsoft.Extensions.AI.Google when available
+        // For now, throw not implemented until we get the correct package
+        throw new NotImplementedException("Gemini client not yet implemented - waiting for correct package version");
     }
     
     private IChatClient CreateOllamaClient(string model)

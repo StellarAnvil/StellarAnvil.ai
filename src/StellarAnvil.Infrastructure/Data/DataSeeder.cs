@@ -98,6 +98,203 @@ public static class DataSeeder
             }
         );
 
+        // Seed the default team members
+
+        context.TeamMembers.AddRange(
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice BA",
+                Email = "alice+ba@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.BusinessAnalyst,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a business analyst who can help with requirements analysis and Jira integration. Once you are done with task, you are requested to get your task reviewed by a senior business analyst. Keep getting reviewed untill Sr BA is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Sr BA",
+                Email = "alice+srba@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.BusinessAnalyst,
+                Grade = TeamMemberGrade.Senior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a senior business analyst who can help with requirements analysis and your primary focus is to review the work of junior business analysts. You are requested to review the work of junior business analysts and give them feedback. If happy with the work, you are requested to approve the work. If not, you are requested to give feedback and ask them to improve the work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Developer",
+                Email = "alice+developer@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.Developer,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a developer who can help with coding tasks. Once you are done with task, you are requested to get your task reviewed by a senior developer. Keep getting reviewed untill Sr Developer is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Sr Developer",
+                Email = "alice+srdeveloper@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.Developer,
+                Grade = TeamMemberGrade.Senior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a senior developer who can help with coding tasks and your primary focus is to review the work of junior developers. You are requested to review the work of junior developers and give them feedback. If happy with the work, you are requested to approve the work. If not, you are requested to give feedback and ask them to improve the work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice QA",
+                Email = "alice+qa@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.QualityAssurance,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a quality assurance who can help with testing tasks. Once you are done with task, you are requested to get your task reviewed by a senior quality assurance. Keep getting reviewed untill Sr QA is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Sr QA",
+                Email = "alice+srqa@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.QualityAssurance,
+                Grade = TeamMemberGrade.Senior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a senior quality assurance who can help with testing tasks and your primary focus is to review the work of junior quality assurance. You are requested to review the work of junior quality assurance and give them feedback. If happy with the work, you are requested to approve the work. If not, you are requested to give feedback and ask them to improve the work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Architect",
+                Email = "alice+architect@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.Architect,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are an architect who can help with architectural design tasks. Once you are done with task, you are requested to get your task reviewed by a senior architect. Keep getting reviewed untill Sr Architect is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Sr Architect",
+                Email = "alice+srarchitect@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.Architect,
+                Grade = TeamMemberGrade.Senior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a senior architect who can help with architectural design tasks and your primary focus is to review the work of junior architects. You are requested to review the work of junior architects and give them feedback. If happy with the work, you are requested to approve the work. If not, you are requested to give feedback and ask them to improve the work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice UX Designer",
+                Email = "alice+uxdesigner@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.UXDesigner,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a UX designer who can help with user interface design tasks. Once you are done with task, you are requested to get your task reviewed by a senior UX designer. Keep getting reviewed untill Sr UX Designer is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Sr UX Designer",
+                Email = "alice+sruxdesigner@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.UXDesigner,
+                Grade = TeamMemberGrade.Senior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a senior UX designer who can help with user interface design tasks and your primary focus is to review the work of junior UX designers. You are requested to review the work of junior UX designers and give them feedback. If happy with the work, you are requested to approve the work. If not, you are requested to give feedback and ask them to improve the work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Security Reviewer",
+                Email = "alice+securityreviewer@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.SecurityReviewer,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a security reviewer who can help with security analysis tasks. Once you are done with task, you are requested to get your task reviewed by a senior security reviewer. Keep getting reviewed untill Sr Security Reviewer is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice Sr Security Reviewer",
+                Email = "alice+srsecurityreviewer@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.SecurityReviewer,
+                Grade = TeamMemberGrade.Senior,
+                Model = "gpt-5-nano",
+                SystemPrompt = "You are a senior security reviewer who can help with security analysis tasks and your primary focus is to review the work of junior security reviewers. You are requested to review the work of junior security reviewers and give them feedback. If happy with the work, you are requested to approve the work. If not, you are requested to give feedback and ask them to improve the work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Razin PO",
+                Email = "razin+po@example.com",
+                Type = TeamMemberType.Human,
+                Role = TeamMemberRole.ProductOwner,
+                Grade = TeamMemberGrade.Lead
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Razin BA",
+                Email = "razin+ba@example.com",
+                Type = TeamMemberType.Human,
+                Role = TeamMemberRole.BusinessAnalyst,
+                Grade = TeamMemberGrade.Lead
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Razin Developer",
+                Email = "razin+developer@example.com",
+                Type = TeamMemberType.Human,
+                Role = TeamMemberRole.Developer,
+                Grade = TeamMemberGrade.Lead
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
+                Name = "Razin QA",
+                Email = "razin+qa@example.com",
+                Type = TeamMemberType.Human,
+                Role = TeamMemberRole.QualityAssurance,
+                Grade = TeamMemberGrade.Lead
+            }
+        );
+
         await context.SaveChangesAsync();
     }
 }

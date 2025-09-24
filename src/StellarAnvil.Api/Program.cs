@@ -17,6 +17,15 @@ using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Explicitly configure configuration sources to ensure user secrets are loaded
+builder.Configuration.Sources.Clear();
+builder.Configuration
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    .AddUserSecrets<Program>(optional: true, reloadOnChange: true)  // Explicitly add user secrets
+    .AddEnvironmentVariables()
+    .AddCommandLine(args);
+
 // Serilog configuration
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)

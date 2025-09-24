@@ -244,7 +244,7 @@ public class ChatService : IChatService
         }
 
         // Get AI client for the requested model (or use assigned member's model if AI)
-        var modelToUse = request.Model ?? (assignedMember.Type == Domain.Enums.TeamMemberType.AI ? assignedMember.Model : "deepseek-r1");
+        var modelToUse = request.Model ?? (assignedMember.Type == Domain.Enums.TeamMemberType.AI ? assignedMember.Model : "Llama3.1:8B");
         var chatClient = await _aiClientService.GetClientForModelAsync(modelToUse);
 
         // Get assigned member's system prompt with task context
@@ -300,7 +300,7 @@ public class ChatService : IChatService
     private async Task<ChatCompletionResponse> CreateNewTaskAsync(ChatCompletionRequest request, Domain.Entities.TeamMember teamMember)
     {
         // Use the requested model (or default) as the planner
-        var plannerModel = request.Model ?? "deepseek-r1";
+        var plannerModel = request.Model ?? "Llama3.1:8B";
         var plannerClient = await _aiClientService.GetClientForModelAsync(plannerModel);
 
         // Get the latest user message for task analysis

@@ -183,7 +183,7 @@ public class AutoGenCollaborationService
 
         try
         {
-            var chatClient = await _aiClientService.GetClientForModelAsync(member.Model ?? "deepseek-r1");
+            var chatClient = await _aiClientService.GetClientForModelAsync(member.Model ?? "Llama3.1:8B");
             var response = await chatClient.GetResponseAsync(messages);
             return response.Messages?.FirstOrDefault()?.Text ?? "No response generated";
         }

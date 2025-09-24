@@ -53,7 +53,7 @@ public class WorkflowService : IWorkflowService
 
         try
         {
-            var chatClient = await _aiClientService.GetClientForModelAsync("deepseek-r1");
+            var chatClient = await _aiClientService.GetClientForModelAsync("Llama3.1:8B");
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, "You are a workflow selection assistant. Select the most appropriate workflow based on task complexity."),
@@ -181,7 +181,7 @@ public class WorkflowService : IWorkflowService
 
         try
         {
-            var chatClient = await _aiClientService.GetClientForModelAsync("deepseek-r1");
+            var chatClient = await _aiClientService.GetClientForModelAsync("Llama3.1:8B");
             var messages = new List<ChatMessage>
             {
                 new(ChatRole.System, "You are a confirmation assistant. Analyze user messages for confirmation keywords and respond with YES or NO only."),
