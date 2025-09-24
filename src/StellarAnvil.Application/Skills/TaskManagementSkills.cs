@@ -27,7 +27,7 @@ public class TaskManagementSkills
         _workflowService = workflowService;
     }
 
-    [KernelFunction, Description("Create a new SDLC task and assign it to an appropriate team member")]
+    [KernelFunction("CreateTaskAsync"), Description("Create a new SDLC task and assign it to an appropriate team member")]
     public async Task<string> CreateTaskAsync(
         [Description("Task description - what needs to be done")] string description,
         [Description("User name who requested the task")] string userName,

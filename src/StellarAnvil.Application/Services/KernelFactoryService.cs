@@ -71,16 +71,9 @@ public class KernelFactoryService : IKernelFactoryService
                 throw new InvalidOperationException($"Gemini API key not configured for model: {model}");
             }
             
-            // TODO: Add Gemini connector when the correct package version is available
-            // For now, fallback to Ollama
-            var ollamaBaseUrl = _configuration["AI:Ollama:BaseUrl"] ?? "http://localhost:11434";
-            var ollamaModel = _configuration["AI:Ollama:DefaultModel"] ?? "Llama3.1:8B";
-#pragma warning disable SKEXP0010
-            builder.AddOpenAIChatCompletion(
-                modelId: ollamaModel,
-                apiKey: "not-needed",
-                endpoint: new Uri($"{ollamaBaseUrl}/v1"));
-#pragma warning restore SKEXP0010
+#pragma warning disable SKEXP0070
+            builder.AddGoogleAIGeminiChatCompletion(model, apiKey);
+#pragma warning restore SKEXP0070
         }
         else
         {

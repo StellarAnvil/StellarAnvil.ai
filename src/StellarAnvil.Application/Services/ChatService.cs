@@ -134,14 +134,32 @@ public class ChatService : IChatService
 
         try
         {
+            // Extract user name from the request
+            var userName = await ExtractUserNameFromMessages(request.Messages);
+            if (string.IsNullOrEmpty(userName))
+            {
+                userName = "Unknown User";
+            }
+
             // Step 1: Use default Ollama model for task creation and assignment
-            var defaultKernel = await _kernelFactory.CreateKernelForModelAsync("Llama3.1:8B");
+            var defaultKernel = await _kernelFactory.CreateKernelForModelAsync("gemini-2.5-pro");
             
             var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
             
             // Add system message for task creation
-            chatHistory.AddSystemMessage("You are an AI assistant that helps create and manage SDLC tasks. Use the CreateTaskAsync function when users request help with tasks.");
-            
+            chatHistory.AddSystemMessage($@"You are an AI assistant that helps create and manage SDLC tasks.
+
+CRITICAL: For ANY user request that involves work, tasks, or projects, you MUST create task FIRST using CreateTaskAsync function.
+
+User: {userName}
+
+When the user says things like:
+- ""I need help with X""
+- ""Can you help me with Y""
+- ""I want to create Z""
+- ""Help me build something""
+
+Do NOT provide direct solutions. Always create a task first using CreateTaskAsync function.");
             // Add user messages to chat history
             foreach (var message in request.Messages)
             {
@@ -156,12 +174,14 @@ public class ChatService : IChatService
             }
 
             // Enable automatic function calling for task creation
-            var executionSettings = new Microsoft.SemanticKernel.Connectors.OpenAI.OpenAIPromptExecutionSettings
+#pragma warning disable SKEXP0070
+            var executionSettings = new Microsoft.SemanticKernel.Connectors.Google.GeminiPromptExecutionSettings()
             {
-                ToolCallBehavior = Microsoft.SemanticKernel.Connectors.OpenAI.ToolCallBehavior.AutoInvokeKernelFunctions,
+                ToolCallBehavior = Microsoft.SemanticKernel.Connectors.Google.GeminiToolCallBehavior.AutoInvokeKernelFunctions,
                 MaxTokens = 4000,
-                Temperature = 0.7
+                Temperature = 0.7f
             };
+#pragma warning restore SKEXP0070
 
             // Get chat completion service from kernel and process with SK
             var chatCompletionService = defaultKernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
@@ -172,16 +192,48 @@ public class ChatService : IChatService
             
             var skResponse = result.LastOrDefault()?.Content ?? "";
             
-            // Parse the task creation result from SK
-            var taskCreationResult = ParseTaskCreationResult(skResponse);
-            
-            if (taskCreationResult.Success && taskCreationResult.TaskId.HasValue)
+            // Check if SK successfully called the CreateTaskAsync function
+            // Debug: Log all metadata keys
+
+            var metaData = result.SelectMany(r => r.Metadata).Aggregate("", (a, b) => $"{a}\n Key: {b.Key}, Value: {b.Value}");
+
+            Console.WriteLine($"Metadata: {metaData}");
+            foreach (var message in result)
             {
-                resultWorkflow = StreamTaskSuccessAndCollaboration(taskCreationResult, chatId, created, request.Model);
+                if (message.Metadata != null)
+                {
+                    foreach (var key in message.Metadata.Keys)
+                    {
+                        Console.WriteLine($"Metadata key: {key}, Metadata value: {message.Metadata[key]}");
+                    }
+                }
+            }
+
+            Console.WriteLine($"SK Response: {skResponse}");
+            
+            // Look for function call results in the chat history
+            var functionResults = result.Where(r => r.Metadata?.ContainsKey("ChatResponseMessage.FunctionToolCalls") == true).ToList();
+            
+            if (functionResults.Any())
+            {
+                // SK successfully called a function - extract task info from the natural response
+                // The response should contain task information
+                var taskNumberMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"Task #(\d+)");
+                if (taskNumberMatch.Success && int.TryParse(taskNumberMatch.Groups[1].Value, out int taskNumber))
+                {
+                    // Stream the SK response first, then continue with collaboration
+                    resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, skResponse, chatId, created, request.Model);
+                }
+                else
+                {
+                    // SK called function but we couldn't extract task number - stream the response anyway
+                    resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                }
             }
             else
             {
-                resultWorkflow = StreamMessage(taskCreationResult.Message ?? "I couldn't create a task from your request. Could you please be more specific about what you need help with?", chatId, created, request.Model);
+                // No function was called - just stream the SK response
+                resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
             }
         }
         catch (Exception ex)
@@ -198,19 +250,24 @@ public class ChatService : IChatService
         }
     }
 
-    private async IAsyncEnumerable<ChatCompletionChunk> StreamTaskSuccessAndCollaboration(
-        TaskCreationResult taskResult, string chatId, long created, string model)
+    private async IAsyncEnumerable<ChatCompletionChunk> StreamTaskSuccessAndAutogenCollaboration(
+        int taskNumber, string skResponse, string chatId, long created, string model)
     {
-        // Stream task creation success
-        await foreach (var chunk in StreamMessage($"✅ Task #{taskResult.TaskId} created successfully!", chatId, created, model))
+        // Stream the SK response (which includes task creation confirmation)
+        await foreach (var chunk in StreamMessage(skResponse, chatId, created, model))
         {
             yield return chunk;
         }
 
-        // Start AutoGen collaboration
-        await foreach (var chunk in StreamAutoGenCollaboration(taskResult.TaskId!.Value, taskResult.Description, chatId, created, model))
+        // Get the task details to start AutoGen collaboration
+        var task = await _taskApplicationService.GetByTaskNumberAsync(taskNumber);
+        if (task != null)
         {
-            yield return chunk;
+            // Start AutoGen collaboration
+            await foreach (var chunk in StreamAutoGenCollaboration(task.Id, task.Description, chatId, created, model))
+            {
+                yield return chunk;
+            }
         }
     }
 
@@ -346,54 +403,6 @@ public class ChatService : IChatService
             
             await System.Threading.Tasks.Task.Delay(50); // Simulate real-time typing
         }
-    }
-
-    /// <summary>
-    /// Parse task creation result from SK response
-    /// </summary>
-    private TaskCreationResult ParseTaskCreationResult(string skResponse)
-    {
-        try
-        {
-            // Look for JSON in the SK response
-            var jsonMatch = Regex.Match(skResponse, @"\{.*\}", RegexOptions.Singleline);
-            if (jsonMatch.Success)
-            {
-                var json = JsonSerializer.Deserialize<JsonElement>(jsonMatch.Value);
-                
-                var success = json.TryGetProperty("success", out var successProp) && successProp.GetBoolean();
-                var message = json.TryGetProperty("message", out var messageProp) ? messageProp.GetString() : "";
-                var taskIdStr = json.TryGetProperty("taskId", out var taskIdProp) ? taskIdProp.GetString() : null;
-                
-                Guid? taskId = null;
-                if (Guid.TryParse(taskIdStr, out var parsedId))
-                {
-                    taskId = parsedId;
-                }
-
-                var description = json.TryGetProperty("description", out var descProp) ? descProp.GetString() : "";
-
-                return new TaskCreationResult
-                {
-                    Success = success,
-                    Message = message,
-                    TaskId = taskId,
-                    Description = description ?? ""
-                };
-            }
-        }
-        catch
-        {
-            // Fall through to default
-        }
-
-        return new TaskCreationResult
-        {
-            Success = false,
-            Message = "Could not parse task creation result",
-            TaskId = null,
-            Description = ""
-        };
     }
 
     /// <summary>
@@ -924,13 +933,3 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
     }
 }
 
-/// <summary>
-/// Result of task creation from Semantic Kernel
-/// </summary>
-public class TaskCreationResult
-{
-    public bool Success { get; set; }
-    public string? Message { get; set; }
-    public Guid? TaskId { get; set; }
-    public string Description { get; set; } = string.Empty;
-}

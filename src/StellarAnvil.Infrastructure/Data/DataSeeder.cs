@@ -156,6 +156,19 @@ public static class DataSeeder
             new TeamMember
             {
                 Id = Guid.NewGuid(),
+                Name = "Gemini Jr BA",
+                Email = "gemini+jrba@example.com",
+                Type = TeamMemberType.AI,
+                Role = TeamMemberRole.BusinessAnalyst,
+                Grade = TeamMemberGrade.Junior,
+                Model = "gemini-1.5-flash",
+                SystemPrompt = "You are a junior business analyst who can help with requirements analysis. Once you are done with task, you are requested to get your task reviewed by a senior business analyst. Keep getting reviewed until Sr BA is satisfied with your work.",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new TeamMember
+            {
+                Id = Guid.NewGuid(),
                 Name = "Alice QA",
                 Email = "alice+qa@example.com",
                 Type = TeamMemberType.AI,
