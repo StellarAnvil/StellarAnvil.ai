@@ -13,15 +13,15 @@ namespace StellarAnvil.Application.Services;
 
 public class ChatService : IChatService
 {
-    private readonly Kernel _kernel;
+    private readonly IKernelFactoryService _kernelFactory;
     private readonly ITeamMemberService _teamMemberService;
     private readonly IAIClientService _aiClientService;
     private readonly ITaskApplicationService _taskApplicationService;
     private readonly AutoGenCollaborationService _collaborationService;
 
-    public ChatService(Kernel kernel, ITeamMemberService teamMemberService, IAIClientService aiClientService, ITaskApplicationService taskApplicationService, AutoGenCollaborationService collaborationService)
+    public ChatService(IKernelFactoryService kernelFactory, ITeamMemberService teamMemberService, IAIClientService aiClientService, ITaskApplicationService taskApplicationService, AutoGenCollaborationService collaborationService)
     {
-        _kernel = kernel;
+        _kernelFactory = kernelFactory;
         _teamMemberService = teamMemberService;
         _aiClientService = aiClientService;
         _taskApplicationService = taskApplicationService;
@@ -134,7 +134,9 @@ public class ChatService : IChatService
 
         try
         {
-            // Use Semantic Kernel with TaskManagementSkills to create task
+            // Step 1: Use default Ollama model for task creation and assignment
+            var defaultKernel = await _kernelFactory.CreateKernelForModelAsync("Llama3.1:8B");
+            
             var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
             
             // Add system message for task creation
@@ -162,11 +164,11 @@ public class ChatService : IChatService
             };
 
             // Get chat completion service from kernel and process with SK
-            var chatCompletionService = _kernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
+            var chatCompletionService = defaultKernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
             var result = await chatCompletionService.GetChatMessageContentsAsync(
                 chatHistory, 
                 executionSettings, 
-                _kernel);
+                defaultKernel);
             
             var skResponse = result.LastOrDefault()?.Content ?? "";
             
@@ -438,78 +440,6 @@ public class ChatService : IChatService
         return null;
     }
 
-    // LEGACY METHODS - TO BE REMOVED AFTER VERIFICATION
-    private async Task<ChatCompletionResponse> ProcessChatCompletionWithSemanticKernelAsync(ChatCompletionRequest request)
-    {
-        try
-        {
-            // Convert OpenAI messages to SK ChatHistory
-            var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
-            
-            foreach (var message in request.Messages)
-            {
-                var role = message.Role switch
-                {
-                    "system" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.System,
-                    "user" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User,
-                    "assistant" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.Assistant,
-                    _ => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User
-                };
-                chatHistory.AddMessage(role, message.Content ?? "");
-            }
-
-            // Enable automatic function calling
-            var executionSettings = new Microsoft.SemanticKernel.Connectors.OpenAI.OpenAIPromptExecutionSettings
-            {
-                ToolCallBehavior = Microsoft.SemanticKernel.Connectors.OpenAI.ToolCallBehavior.AutoInvokeKernelFunctions,
-                MaxTokens = 4000,
-                Temperature = 0.7
-            };
-
-            // Get chat completion service from kernel
-            var chatCompletionService = _kernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
-            
-            // Process with SK - this will automatically call functions if needed
-            var result = await chatCompletionService.GetChatMessageContentsAsync(
-                chatHistory, 
-                executionSettings, 
-                _kernel);
-            
-            var content = result.LastOrDefault()?.Content ?? "";
-
-            // Convert SK result back to OpenAI format
-            return new ChatCompletionResponse
-            {
-                Id = $"chatcmpl-{Guid.NewGuid():N}",
-                Object = "chat.completion",
-                Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                Model = request.Model,
-                Choices = new List<Choice>
-                {
-                    new()
-                    {
-                        Index = 0,
-                        Message = new DTOs.OpenAI.ChatMessage
-                        {
-                            Role = "assistant",
-                            Content = content
-                        },
-                        FinishReason = "stop"
-                    }
-                },
-                Usage = new Usage
-                {
-                    PromptTokens = request.Messages.Sum(m => m.Content?.Length ?? 0) / 4,
-                    CompletionTokens = content.Length / 4,
-                    TotalTokens = (request.Messages.Sum(m => m.Content?.Length ?? 0) + content.Length) / 4
-                }
-            };
-        }
-        catch (Exception ex)
-        {
-            return CreateErrorResponse($"Error processing request: {ex.Message}");
-        }
-    }
     
     private async Task<ChatCompletionResponse> ProcessChatCompletionInternalAsync(ChatCompletionRequest request)
     {
