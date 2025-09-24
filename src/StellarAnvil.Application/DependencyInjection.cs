@@ -43,19 +43,22 @@ public static class DependencyInjection
             
             // Check for OpenAI API key first (from user secrets, environment variables, or appsettings)
             var openAiApiKey = configuration["AI:OpenAI:ApiKey"];
-            if (false)
+            if (!string.IsNullOrEmpty(openAiApiKey))
             {
                 // Use OpenAI if API key is provided (supports function calling)
-                var openAiModel = configuration["AI:OpenAI:DefaultModel"] ?? "gpt-5-mini";
+                var openAiModel = configuration["AI:OpenAI:DefaultModel"] ?? "gpt-4o-mini";
+#pragma warning disable SKEXP0010
                 builder.AddOpenAIChatCompletion(openAiModel, openAiApiKey);
+#pragma warning restore SKEXP0010
             }
             else
             {
                 // Fallback to Ollama if no OpenAI API key
                 var ollamaBaseUrl = configuration["AI:Ollama:BaseUrl"] ?? "http://localhost:11434";
+                var ollamaModel = configuration["AI:Ollama:DefaultModel"] ?? "deepseek-r1";
 #pragma warning disable SKEXP0010
                 builder.AddOpenAIChatCompletion(
-                    modelId: "Llama3.1:8B",
+                    modelId: ollamaModel,
                     apiKey: "not-needed", // Ollama doesn't require API key
                     endpoint: new Uri($"{ollamaBaseUrl}/v1"));
 #pragma warning restore SKEXP0010

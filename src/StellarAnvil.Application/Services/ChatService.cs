@@ -4,6 +4,7 @@ using StellarAnvil.Application.DTOs;
 using StellarAnvil.Application.DTOs.OpenAI;
 using StellarAnvil.Domain.Services;
 using StellarAnvil.Domain.Enums;
+using StellarAnvil.Domain.Entities;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -48,12 +49,281 @@ public class ChatService : IChatService
             }
         };
 
-        // Get the full response using Semantic Kernel
-        var fullResponse = await ProcessChatCompletionWithSemanticKernelAsync(request);
-        var content = fullResponse.Choices.FirstOrDefault()?.Message?.Content ?? "";
+        // UNIFIED PROCESSING: Extract user, detect task, use SK + AutoGen
+        await foreach (var chunk in ProcessUnifiedWorkflowAsync(request, chatId, created))
+        {
+            yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// UNIFIED workflow processing: SK function calling + AutoGen collaboration + streaming
+    /// </summary>
+    private async IAsyncEnumerable<ChatCompletionChunk> ProcessUnifiedWorkflowAsync(
+        ChatCompletionRequest request, string chatId, long created)
+    {
+        IAsyncEnumerable<ChatCompletionChunk>? workflow = null;
         
-        // Stream the content in chunks (simulating real-time typing)
-        var words = content.Split(' ');
+        try
+        {
+            // Step 1: Extract user name from messages
+            var userName = await ExtractUserNameFromMessages(request.Messages);
+            if (string.IsNullOrEmpty(userName))
+            {
+                workflow = StreamMessage("I need to know who you are to help you. Please introduce yourself by saying 'I am [your name]'.", chatId, created, request.Model);
+            }
+            else
+            {
+                // Step 2: Get user from database
+                var user = await _teamMemberService.GetTeamMemberByNameAsync(userName);
+                if (user == null)
+                {
+                    workflow = StreamMessage($"Hey {userName}, I did not find you in my system, can you please request admin to add you?", chatId, created, request.Model);
+                }
+                else
+                {
+                    // Step 3: Check for existing task context in chat history
+                    var existingTaskId = ExtractTaskNumberFromMessages(request.Messages);
+                    
+                    if (existingTaskId.HasValue)
+                    {
+                        // Continue existing task
+                        workflow = ContinueExistingTaskWorkflowAsync(existingTaskId.Value, request, user, chatId, created);
+                    }
+                    else
+                    {
+                        // New task creation workflow
+                        workflow = CreateNewTaskWorkflowAsync(request, user, chatId, created);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            workflow = StreamMessage($"Error processing request: {ex.Message}", chatId, created, request.Model);
+        }
+
+        if (workflow != null)
+        {
+            await foreach (var chunk in workflow)
+            {
+                yield return chunk;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Create new task using SK function calling + AutoGen collaboration
+    /// </summary>
+    private async IAsyncEnumerable<ChatCompletionChunk> CreateNewTaskWorkflowAsync(
+        ChatCompletionRequest request, TeamMember user, string chatId, long created)
+    {
+        // Stream acknowledgment
+        await foreach (var chunk in StreamMessage($"Hi {user.Name}! I'll help you with that task. Let me analyze your request and get our team working on it...", chatId, created, request.Model))
+        {
+            yield return chunk;
+        }
+
+        // Stream task creation progress
+        await foreach (var chunk in StreamMessage("🔍 Analyzing your request and creating task...", chatId, created, request.Model))
+        {
+            yield return chunk;
+        }
+
+        IAsyncEnumerable<ChatCompletionChunk>? resultWorkflow = null;
+
+        try
+        {
+            // Use Semantic Kernel with TaskManagementSkills to create task
+            var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
+            
+            // Add system message for task creation
+            chatHistory.AddSystemMessage("You are an AI assistant that helps create and manage SDLC tasks. Use the CreateTaskAsync function when users request help with tasks.");
+            
+            // Add user messages to chat history
+            foreach (var message in request.Messages)
+            {
+                var role = message.Role switch
+                {
+                    "system" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.System,
+                    "user" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User,
+                    "assistant" => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.Assistant,
+                    _ => Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User
+                };
+                chatHistory.AddMessage(role, message.Content ?? "");
+            }
+
+            // Enable automatic function calling for task creation
+            var executionSettings = new Microsoft.SemanticKernel.Connectors.OpenAI.OpenAIPromptExecutionSettings
+            {
+                ToolCallBehavior = Microsoft.SemanticKernel.Connectors.OpenAI.ToolCallBehavior.AutoInvokeKernelFunctions,
+                MaxTokens = 4000,
+                Temperature = 0.7
+            };
+
+            // Get chat completion service from kernel and process with SK
+            var chatCompletionService = _kernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
+            var result = await chatCompletionService.GetChatMessageContentsAsync(
+                chatHistory, 
+                executionSettings, 
+                _kernel);
+            
+            var skResponse = result.LastOrDefault()?.Content ?? "";
+            
+            // Parse the task creation result from SK
+            var taskCreationResult = ParseTaskCreationResult(skResponse);
+            
+            if (taskCreationResult.Success && taskCreationResult.TaskId.HasValue)
+            {
+                resultWorkflow = StreamTaskSuccessAndCollaboration(taskCreationResult, chatId, created, request.Model);
+            }
+            else
+            {
+                resultWorkflow = StreamMessage(taskCreationResult.Message ?? "I couldn't create a task from your request. Could you please be more specific about what you need help with?", chatId, created, request.Model);
+            }
+        }
+        catch (Exception ex)
+        {
+            resultWorkflow = StreamMessage($"Error during task creation: {ex.Message}", chatId, created, request.Model);
+        }
+
+        if (resultWorkflow != null)
+        {
+            await foreach (var chunk in resultWorkflow)
+            {
+                yield return chunk;
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<ChatCompletionChunk> StreamTaskSuccessAndCollaboration(
+        TaskCreationResult taskResult, string chatId, long created, string model)
+    {
+        // Stream task creation success
+        await foreach (var chunk in StreamMessage($"✅ Task #{taskResult.TaskId} created successfully!", chatId, created, model))
+        {
+            yield return chunk;
+        }
+
+        // Start AutoGen collaboration
+        await foreach (var chunk in StreamAutoGenCollaboration(taskResult.TaskId!.Value, taskResult.Description, chatId, created, model))
+        {
+            yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Continue existing task workflow
+    /// </summary>
+    private async IAsyncEnumerable<ChatCompletionChunk> ContinueExistingTaskWorkflowAsync(
+        int taskId, ChatCompletionRequest request, TeamMember user, string chatId, long created)
+    {
+        var task = await _taskApplicationService.GetByTaskNumberAsync(taskId);
+        if (task == null)
+        {
+            await foreach (var chunk in StreamMessage($"Sorry, I couldn't find Task #{taskId}. It might have been completed or doesn't exist.", chatId, created, request.Model))
+            {
+                yield return chunk;
+            }
+            yield break;
+        }
+
+        await foreach (var chunk in StreamMessage($"Continuing work on Task #{taskId}: {task.Description}", chatId, created, request.Model))
+        {
+            yield return chunk;
+        }
+
+        // Continue with AutoGen collaboration for existing task
+        await foreach (var chunk in StreamAutoGenCollaboration(task.Id, task.Description, chatId, created, request.Model))
+        {
+            yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Stream AutoGen multi-agent collaboration
+    /// </summary>
+    private async IAsyncEnumerable<ChatCompletionChunk> StreamAutoGenCollaboration(
+        Guid taskId, string taskDescription, string chatId, long created, string model)
+    {
+        await foreach (var chunk in StreamMessage("👥 Starting team collaboration...", chatId, created, model))
+        {
+            yield return chunk;
+        }
+
+        IAsyncEnumerable<ChatCompletionChunk>? collaborationWorkflow = null;
+
+        try
+        {
+            // Start AutoGen collaboration
+            var collaborationResult = await _collaborationService.CollaborateAsync(
+                taskId,
+                TeamMemberRole.BusinessAnalyst, // Start with BA
+                taskDescription,
+                "Starting requirements analysis for this task...");
+
+            if (collaborationResult.Success)
+            {
+                collaborationWorkflow = StreamCollaborationSuccess(collaborationResult, taskId, chatId, created, model);
+            }
+            else
+            {
+                collaborationWorkflow = StreamMessage($"❌ {collaborationResult.Message}", chatId, created, model);
+            }
+        }
+        catch (Exception ex)
+        {
+            collaborationWorkflow = StreamMessage($"Error during collaboration: {ex.Message}", chatId, created, model);
+        }
+
+        if (collaborationWorkflow != null)
+        {
+            await foreach (var chunk in collaborationWorkflow)
+            {
+                yield return chunk;
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<ChatCompletionChunk> StreamCollaborationSuccess(
+        CollaborationResult collaborationResult, Guid taskId, string chatId, long created, string model)
+    {
+        // Stream the collaboration process
+        await foreach (var chunk in StreamMessage($"👨‍💼 {collaborationResult.AssignedMember?.Name} (Junior BA): Starting analysis...", chatId, created, model))
+        {
+            yield return chunk;
+        }
+
+        // Stream collaboration messages
+        foreach (var message in collaborationResult.CollaborationHistory)
+        {
+            var roleIcon = message.Role switch
+            {
+                "Junior" => "👨‍💼",
+                "Senior Reviewer" => "👨‍💻",
+                "Junior (Revision)" => "👨‍💼",
+                _ => "💬"
+            };
+            
+            await foreach (var chunk in StreamMessage($"{roleIcon} {message.Sender}: {message.Content}", chatId, created, model))
+            {
+                yield return chunk;
+            }
+        }
+
+        // Stream final result
+        await foreach (var chunk in StreamMessage($"✅ Task completed! Final result:\n\n{collaborationResult.FinalOutput}\n\n📋 Task #{taskId} - Ready for next phase.", chatId, created, model))
+        {
+            yield return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Stream a message word by word
+    /// </summary>
+    private async IAsyncEnumerable<ChatCompletionChunk> StreamMessage(string message, string chatId, long created, string model)
+    {
+        var words = message.Split(' ');
         
         foreach (var word in words)
         {
@@ -61,7 +331,7 @@ public class ChatService : IChatService
             {
                 Id = chatId,
                 Created = created,
-                Model = request.Model,
+                Model = model,
                 Choices = new List<ChoiceDelta>
                 {
                     new()
@@ -72,29 +342,103 @@ public class ChatService : IChatService
                 }
             };
             
-            // Small delay to simulate real-time streaming
-            await Task.Delay(50);
+            await System.Threading.Tasks.Task.Delay(50); // Simulate real-time typing
         }
-        
-        // Final chunk with finish reason
-        yield return new ChatCompletionChunk
+    }
+
+    /// <summary>
+    /// Parse task creation result from SK response
+    /// </summary>
+    private TaskCreationResult ParseTaskCreationResult(string skResponse)
+    {
+        try
         {
-            Id = chatId,
-            Created = created,
-            Model = request.Model,
-            Choices = new List<ChoiceDelta>
+            // Look for JSON in the SK response
+            var jsonMatch = Regex.Match(skResponse, @"\{.*\}", RegexOptions.Singleline);
+            if (jsonMatch.Success)
             {
-                new()
+                var json = JsonSerializer.Deserialize<JsonElement>(jsonMatch.Value);
+                
+                var success = json.TryGetProperty("success", out var successProp) && successProp.GetBoolean();
+                var message = json.TryGetProperty("message", out var messageProp) ? messageProp.GetString() : "";
+                var taskIdStr = json.TryGetProperty("taskId", out var taskIdProp) ? taskIdProp.GetString() : null;
+                
+                Guid? taskId = null;
+                if (Guid.TryParse(taskIdStr, out var parsedId))
                 {
-                    Index = 0,
-                    Delta = new MessageDelta(),
-                    FinishReason = "stop"
+                    taskId = parsedId;
                 }
-            },
-            Usage = fullResponse.Usage
+
+                var description = json.TryGetProperty("description", out var descProp) ? descProp.GetString() : "";
+
+                return new TaskCreationResult
+                {
+                    Success = success,
+                    Message = message,
+                    TaskId = taskId,
+                    Description = description ?? ""
+                };
+            }
+        }
+        catch
+        {
+            // Fall through to default
+        }
+
+        return new TaskCreationResult
+        {
+            Success = false,
+            Message = "Could not parse task creation result",
+            TaskId = null,
+            Description = ""
         };
     }
-    
+
+    /// <summary>
+    /// Extract user name from chat messages
+    /// </summary>
+    private System.Threading.Tasks.Task<string?> ExtractUserNameFromMessages(IEnumerable<DTOs.OpenAI.ChatMessage> messages)
+    {
+        var userMessages = messages.Where(m => m.Role == "user").Select(m => m.Content).ToList();
+        
+        foreach (var message in userMessages)
+        {
+            if (string.IsNullOrEmpty(message)) continue;
+            
+            // Look for "I am [name]" pattern
+            var match = Regex.Match(message, @"I\s+am\s+(\w+)", RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                return System.Threading.Tasks.Task.FromResult<string?>(match.Groups[1].Value);
+            }
+        }
+        
+        return System.Threading.Tasks.Task.FromResult<string?>(null);
+    }
+
+    /// <summary>
+    /// Extract task number from chat messages (for context tracking)
+    /// </summary>
+    private int? ExtractTaskNumberFromMessages(IEnumerable<DTOs.OpenAI.ChatMessage> messages)
+    {
+        var assistantMessages = messages.Where(m => m.Role == "assistant").Select(m => m.Content).ToList();
+        
+        foreach (var message in assistantMessages)
+        {
+            if (string.IsNullOrEmpty(message)) continue;
+            
+            // Look for "Task #123" pattern
+            var match = Regex.Match(message, @"Task\s+#(\d+)", RegexOptions.IgnoreCase);
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var taskNumber))
+            {
+                return taskNumber;
+            }
+        }
+        
+        return null;
+    }
+
+    // LEGACY METHODS - TO BE REMOVED AFTER VERIFICATION
     private async Task<ChatCompletionResponse> ProcessChatCompletionWithSemanticKernelAsync(ChatCompletionRequest request)
     {
         try
@@ -648,4 +992,15 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
         // Simple token estimation (roughly 4 characters per token)
         return (text?.Length ?? 0) / 4;
     }
+}
+
+/// <summary>
+/// Result of task creation from Semantic Kernel
+/// </summary>
+public class TaskCreationResult
+{
+    public bool Success { get; set; }
+    public string? Message { get; set; }
+    public Guid? TaskId { get; set; }
+    public string Description { get; set; } = string.Empty;
 }
