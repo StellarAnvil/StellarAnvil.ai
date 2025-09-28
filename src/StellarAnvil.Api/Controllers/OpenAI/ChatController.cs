@@ -6,6 +6,7 @@ using StellarAnvil.Application.Services;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace StellarAnvil.Api.Controllers.OpenAI;
 
@@ -26,45 +27,215 @@ public class ChatController : ControllerBase
     /// <summary>
     /// Create a chat completion (OpenAI compatible)
     /// </summary>
+    // [HttpPost("chat/completions")]
+    // [AllowAnonymous]
+    // public async Task CreateChatCompletion([FromBody] ChatCompletionRequest request)
+    // {
+    //         Response.ContentType = "text/event-stream";
+    //         Response.Headers.Add("Cache-Control", "no-cache");
+    //         Response.Headers.Add("Connection", "keep-alive");
+
+    //         var chatId = $"chatcmpl-{Guid.NewGuid().ToString("N").Substring(0, 16)}";
+    //         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    //         var modelName = request.Model ?? "gpt-3.5-turbo";
+
+    //         // CHUNK 1: Role + initial content
+    //         var chunk1 = new
+    //         {
+    //             id = chatId,
+    //             @object = "chat.completion.chunk",
+    //             created = timestamp,
+    //             model = modelName,
+    //             choices = new[]
+    //             {
+    //                 new
+    //                 {
+    //                     index = 0,
+    //                     delta = new 
+    //                     { 
+    //                         role = "assistant", 
+    //                         content = "" // Empty content with role
+    //                     },
+    //                     finish_reason = (string)null
+    //                 }
+    //             }
+    //         };
+
+    //         var chunk1Json = JsonSerializer.Serialize(chunk1, new JsonSerializerOptions
+    //         {
+    //             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    //         });
+    //         await Response.WriteAsync($"data: {chunk1Json}\n\n");
+    //         await Response.Body.FlushAsync();
+
+    //         // Add a small delay to simulate processing
+    //         await Task.Delay(100);
+
+    //         // CHUNK 2: Actual content
+    //         var contentChunks = new[] 
+    //         { 
+    //             "Hello", 
+    //             " from", 
+    //             " my", 
+    //             " custom", 
+    //             " OpenAI", 
+    //             "-compatible", 
+    //             " model!", 
+    //             " This", 
+    //             " is", 
+    //             " working", 
+    //             " correctly", 
+    //             " in", 
+    //             " VSCode!" 
+    //         };
+
+    //         foreach (var content in contentChunks)
+    //         {
+    //             var contentChunk = new
+    //             {
+    //                 id = chatId,
+    //                 @object = "chat.completion.chunk",
+    //                 created = timestamp,
+    //                 model = modelName,
+    //                 choices = new[]
+    //                 {
+    //                     new
+    //                     {
+    //                         index = 0,
+    //                         delta = new { content = content },
+    //                         finish_reason = (string)null
+    //                     }
+    //                 }
+    //             };
+
+    //             var chunkJson = JsonSerializer.Serialize(contentChunk, new JsonSerializerOptions
+    //             {
+    //                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    //             });
+    //             await Response.WriteAsync($"data: {chunkJson}\n\n");
+    //             await Response.Body.FlushAsync();
+    //             await Task.Delay(50); // Small delay between chunks for effect
+    //         }
+
+    //         // FINAL CHUNK: Empty content with finish_reason
+    //         var finalChunk = new
+    //         {
+    //             id = chatId,
+    //             @object = "chat.completion.chunk",
+    //             created = timestamp,
+    //             model = modelName,
+    //             choices = new[]
+    //             {
+    //                 new
+    //                 {
+    //                     index = 0,
+    //                     delta = new { }, // Empty delta
+    //                     finish_reason = "stop"
+    //                 }
+    //             }
+    //         };
+
+    //         var finalChunkJson = JsonSerializer.Serialize(finalChunk);
+    //         await Response.WriteAsync($"data: {finalChunkJson}\n\n");
+    //         await Response.Body.FlushAsync();
+
+    //         // Send [DONE] marker
+    //         await Response.WriteAsync("data: [DONE]\n\n");
+    //         await Response.Body.FlushAsync();
+
+    // }
+
     [HttpPost("chat/completions")]
-    public async Task<IActionResult> CreateChatCompletion([FromBody] ChatCompletionRequest request)
+    [AllowAnonymous]
+    public async Task CreateChatCompletion([FromBody] ChatCompletionRequest request)
     {
-        using var activity = ActivitySources.AI.StartAIActivity("ChatCompletion", request.Model);
-        var stopwatch = Stopwatch.StartNew();
-        
-        try
+        Response.ContentType = "text/event-stream";
+        Response.Headers.Append("Cache-Control", "no-cache");
+        Response.Headers.Append("Connection", "keep-alive");
+        var chatId = $"chatcmpl-{Guid.NewGuid().ToString("N").Substring(0, 16)}";
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var modelName = request.Model ?? "gpt-3.5-turbo";
+
+        var chunk1 = new ChatCompletionResponse
         {
-            if (request.Messages == null || !request.Messages.Any())
-            {
-                _logger.LogWarning("Chat completion request received with no messages");
-                return BadRequest(new { error = new { message = "Messages are required" } });
-            }
+            Id = chatId,
+            Object = "chat.completion.chunk",
+            Created = timestamp,
+            Model = modelName,
+            Choices =
+            [
+                new Choice
+                {
+                    Index = 0,
+                    Delta = new ChatMessage
+                    {
+                        Role = "assistant",
+                        Content = "" // Empty content with role
+                    },
+                    FinishReason = null
+                }
+            ]
+        };
 
-            _logger.LogInformation("Processing chat completion request with {MessageCount} messages using model {Model} (streaming: {Streaming})", 
-                request.Messages.Count, request.Model, request.Stream);
 
-            activity?.SetTag("ai.request.message_count", request.Messages.Count);
-            activity?.SetTag("ai.request.temperature", request.Temperature);
-            activity?.SetTag("ai.request.max_tokens", request.MaxTokens);
-            activity?.SetTag("ai.request.stream", request.Stream);
+        var chunk1Json = JsonSerializer.Serialize(chunk1, new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
 
-            if (request.Stream)
+        await Response.WriteAsync($"data: {chunk1Json}\n\n");
+        await Response.Body.FlushAsync();
+
+        // Add a small delay to simulate processing
+        await Task.Delay(100);
+
+        // CHUNK 2: Actual content
+        await foreach (var chunk in _chatService.ProcessChatCompletionAsync(request))
+        {
+            var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
             {
-                return await ProcessStreamingRequest(request, activity, stopwatch);
-            }
-            else
-            {
-                return await ProcessNonStreamingRequest(request, activity, stopwatch);
-            }
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+            });
+
+            await Response.WriteAsync($"data: {json}\n\n");
+            await Response.Body.FlushAsync();
         }
-        catch (Exception ex)
+
+        // Send the final chunk with finish_reason
+        var finalChunk = new ChatCompletionResponse
         {
-            stopwatch.Stop();
-            _logger.LogError(ex, "Failed to process chat completion request");
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            Id = chatId,
+            Object = "chat.completion.chunk",
+            Created = timestamp,
+            Model = modelName,
+            Choices =
+            [
+                new Choice
+                {
+                    Index = 0,
+                    Delta = new ChatMessage
+                    {
+                        Content = "" // Empty content
+                    },
+                    FinishReason = "stop"
+                }
+            ]
+        };
+
+        var finalChunkJson = JsonSerializer.Serialize(finalChunk, new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
+
+        await Response.WriteAsync($"data: {finalChunkJson}\n\n");
+        await Response.Body.FlushAsync();
+                
             
-            return StatusCode(500, new { error = new { message = ex.Message } });
-        }
+        // Send the final [DONE] message
+        await Response.WriteAsync("data: [DONE]\n\n");
+        await Response.Body.FlushAsync();
+
+
     }
 
     private async Task<IActionResult> ProcessNonStreamingRequest(
@@ -97,7 +268,7 @@ public class ChatController : ControllerBase
                 new()
                 {
                     Index = 0,
-                    Message = new ChatMessage
+                    Delta = new ChatMessage
                     {
                         Role = "assistant",
                         Content = combinedContent
@@ -105,7 +276,7 @@ public class ChatController : ControllerBase
                     FinishReason = lastChunk?.Choices?.FirstOrDefault()?.FinishReason ?? "stop"
                 }
             },
-            Usage = lastChunk?.Usage ?? new Usage()
+            Usage = new Usage { CompletionTokens = 123, PromptTokens = 456, TotalTokens = 579 } // Placeholder values
         };
         
         stopwatch.Stop();
@@ -117,8 +288,21 @@ public class ChatController : ControllerBase
         activity?.SetTag("ai.response.usage.total_tokens", response.Usage?.TotalTokens);
 
         _logger.LogInformation("Chat completion processed successfully in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-        
-        return Ok(response);
+
+        var finalResponse = JsonSerializer.Serialize(response, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
+
+        _logger.LogInformation("Chat completion processed successfully in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
+
+        return new ContentResult
+        {
+            Content = finalResponse,
+            ContentType = "application/json; charset=utf-8",
+            StatusCode = 200
+        };
     }
 
     private async Task<IActionResult> ProcessStreamingRequest(
@@ -175,6 +359,7 @@ public class ChatController : ControllerBase
     /// List available models (OpenAI compatible)
     /// </summary>
     [HttpGet("models")]
+    [AllowAnonymous]
     public async Task<ActionResult<ModelResponse>> ListModels()
     {
         using var activity = ActivitySources.AI.StartAIActivity("ListModels");
@@ -183,6 +368,14 @@ public class ChatController : ControllerBase
         {
             _logger.LogInformation("Retrieving available models");
             var models = await _chatService.GetModelsAsync();
+
+            models.Data.Add(new Model
+            {
+                Id = "my-gpt-4",
+                Object = "model",
+                Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                OwnedBy = "custom-provider",
+            });
             
             _logger.LogInformation("Retrieved {ModelCount} available models", models.Data.Count);
             activity?.SetTag("ai.models.count", models.Data.Count);

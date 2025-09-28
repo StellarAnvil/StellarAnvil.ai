@@ -33,15 +33,6 @@ public class ChatMessage
 
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
-
-    [JsonPropertyName("name")]
-    public string? Name { get; set; }
-
-    [JsonPropertyName("tool_calls")]
-    public List<ToolCall>? ToolCalls { get; set; }
-
-    [JsonPropertyName("tool_call_id")]
-    public string? ToolCallId { get; set; }
 }
 
 public class Tool

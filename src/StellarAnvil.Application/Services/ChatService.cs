@@ -211,23 +211,98 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
 
             Console.WriteLine($"SK Response: {skResponse}");
             
-            // Look for function call results in the chat history
-            var functionResults = result.Where(r => r.Metadata?.ContainsKey("ChatResponseMessage.FunctionToolCalls") == true).ToList();
+            // Check if function was called successfully by looking at the response content
+            // This works for all providers (OpenAI, Gemini, Claude, Ollama)
+            bool functionWasCalled = skResponse.Contains("task number is") || 
+                                     skResponse.Contains("Task #") || 
+                                     skResponse.Contains("assigned to") ||
+                                     System.Text.RegularExpressions.Regex.IsMatch(skResponse, @"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}");
             
-            if (functionResults.Any())
+            if (functionWasCalled)
             {
                 // SK successfully called a function - extract task info from the natural response
-                // The response should contain task information
-                var taskNumberMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"Task #(\d+)");
-                if (taskNumberMatch.Success && int.TryParse(taskNumberMatch.Groups[1].Value, out int taskNumber))
+                // Try multiple GUID extraction patterns to handle different response formats
+                
+                Guid taskGuid = Guid.Empty;
+                bool guidFound = false;
+                
+                // Pattern 1: "Task #guid" format
+                var taskGuidMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"Task #([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
+                if (taskGuidMatch.Success && Guid.TryParse(taskGuidMatch.Groups[1].Value, out taskGuid))
+                {
+                    guidFound = true;
+                }
+                
+                // Pattern 2: "task number is guid" format (for Gemini responses)
+                if (!guidFound)
+                {
+                    var taskNumberMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"task number is ([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
+                    if (taskNumberMatch.Success && Guid.TryParse(taskNumberMatch.Groups[1].Value, out taskGuid))
+                    {
+                        guidFound = true;
+                    }
+                }
+                
+                // Pattern 3: Any GUID in the response
+                if (!guidFound)
+                {
+                    var anyGuidMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
+                    if (anyGuidMatch.Success && Guid.TryParse(anyGuidMatch.Groups[1].Value, out taskGuid))
+                    {
+                        guidFound = true;
+                    }
+                }
+                
+                if (guidFound)
                 {
                     // Stream the SK response first, then continue with collaboration
+                    // Convert GUID to int for the existing AutoGen workflow (use GetHashCode for consistency)
+                    var taskNumber = Math.Abs(taskGuid.GetHashCode());
+                    Console.WriteLine($"Extracted task GUID: {taskGuid}, converted to task number: {taskNumber}");
                     resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, skResponse, chatId, created, request.Model);
                 }
                 else
                 {
-                    // SK called function but we couldn't extract task number - stream the response anyway
-                    resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                    // Try to extract task ID from JSON response if present in the SK response
+                    try
+                    {
+                        var jsonMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"\{.*""taskId"".*\}");
+                        if (jsonMatch.Success)
+                        {
+                            using var document = JsonDocument.Parse(jsonMatch.Value);
+                            if (document.RootElement.TryGetProperty("taskId", out var taskIdElement))
+                            {
+                                var taskIdString = taskIdElement.GetString();
+                                if (Guid.TryParse(taskIdString, out Guid taskId))
+                                {
+                                    var taskNumber = Math.Abs(taskId.GetHashCode());
+                                    Console.WriteLine($"Extracted task GUID from JSON: {taskId}, converted to task number: {taskNumber}");
+                                    resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, skResponse, chatId, created, request.Model);
+                                }
+                                else
+                                {
+                                    Console.WriteLine("Failed to parse GUID from JSON taskId");
+                                    resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine("No taskId property found in JSON");
+                                resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                            }
+                        }
+                        else
+                        {
+                            // SK called function but we couldn't extract task ID - stream the response anyway
+                            Console.WriteLine("No JSON found in response, streaming original message");
+                            resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error parsing task ID from JSON: {ex.Message}");
+                        resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                    }
                 }
             }
             else
@@ -563,7 +638,7 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
                 new()
                 {
                     Index = 0,
-                    Message = new DTOs.OpenAI.ChatMessage
+                    Delta = new DTOs.OpenAI.ChatMessage
                     {
                         Role = "assistant",
                         Content = response.Messages?.FirstOrDefault()?.Text ?? ""
@@ -640,7 +715,7 @@ If just conversation, respond normally and be helpful.";
                     new()
                     {
                         Index = 0,
-                        Message = new DTOs.OpenAI.ChatMessage
+                        Delta = new DTOs.OpenAI.ChatMessage
                         {
                             Role = "assistant",
                             Content = plannerContent
@@ -702,7 +777,7 @@ If just conversation, respond normally and be helpful.";
                     new()
                     {
                         Index = 0,
-                        Message = new DTOs.OpenAI.ChatMessage
+                        Delta = new DTOs.OpenAI.ChatMessage
                         {
                             Role = "assistant",
                             Content = responseMessage
@@ -915,7 +990,7 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
                 new()
                 {
                     Index = 0,
-                    Message = new DTOs.OpenAI.ChatMessage
+                    Delta = new DTOs.OpenAI.ChatMessage
                     {
                         Role = "assistant",
                         Content = message
