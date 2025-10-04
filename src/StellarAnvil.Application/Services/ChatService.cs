@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.SemanticKernel.ChatCompletion;
+using OpenAI.Chat;
 
 namespace StellarAnvil.Application.Services;
 
@@ -235,18 +236,27 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
             }
             
             var geminiAgent = await _autoGenGeminiService.CreateGeminiAgentAsync("gemini-2.0-flash-exp", null, geminiTools);
-            var autoGenMessages = new List<AutoGen.Core.IMessage>();
+            var autoGenMessages = new List<IMessage<Content>>();
             foreach (var msg in chatHistory)
             {
-                Role role;
+                string roleStr;
                 if (msg.Role == Microsoft.SemanticKernel.ChatCompletion.AuthorRole.System)
-                    role = Role.System;
+                    roleStr = "system";
                 else if (msg.Role == Microsoft.SemanticKernel.ChatCompletion.AuthorRole.Assistant)
-                    role = Role.Assistant;
+                    roleStr = "model"; // Gemini uses "model" for assistant role
                 else
-                    role = Role.User;
+                    roleStr = "user";
                 
-                autoGenMessages.Add(new TextMessage(role, msg.Content ?? ""));
+                // Create Google Cloud Content for Gemini
+                var content = new Content
+                {
+                    Role = roleStr,
+                    Parts = { new Part { Text = msg.Content ?? "" } }
+                };
+                
+                // Create IMessage<Content> using MessageEnvelope
+                var message = MessageEnvelope.Create(content, from: roleStr);
+                autoGenMessages.Add(message);
             }
             
             var response = await _autoGenGeminiService.SendConversationAsync(geminiAgent, autoGenMessages);
@@ -1052,18 +1062,29 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
     public async IAsyncEnumerable<ChatCompletionChunk> ProcessChatWithFunctionCallsAsync(ChatCompletionRequest request)
     {
         // Convert request messages to AutoGen format
-        var autoGenMessages = new List<IMessage>();
+        var autoGenMessages = new List<IMessage<Content>>();
         foreach (var msg in request.Messages)
         {
-            var role = msg.Role switch
+            string roleStr = msg.Role switch
             {
-                "system" => Role.System,
-                "assistant" => Role.Assistant, 
-                "tool" => Role.Assistant, // Map tool to assistant for AutoGen
-                _ => Role.User
+                "system" => "system",
+                "assistant" => "model", // Gemini uses "model" for assistant role
+                _ => "user"
             };
-            autoGenMessages.Add(new TextMessage(role, msg.Content ?? ""));
+
+            // Create Google Cloud Content for Gemini
+            var geminiContent = new Content
+            {
+                Role = roleStr,
+                Parts = { new Part { Text = msg.Content ?? "" } }
+            };
+
+            // Create IMessage<Content> using MessageEnvelope
+            var message = MessageEnvelope.Create(geminiContent, from: roleStr);
+            autoGenMessages.Add(message);
         }
+        
+        autoGenMessages = autoGenMessages.SkipWhile(m => m.From == "system").ToList(); // Skip initial system messages for Gemini
 
         // Convert OpenAI tools to Google Cloud AI Platform tools if available
         Google.Cloud.AIPlatform.V1.Tool[]? geminiTools = null;
@@ -1086,16 +1107,48 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
                         try
                         {
                             var parametersJson = JsonSerializer.Serialize(tool.Function.Parameters);
-                            var openApiSchema = new Google.Cloud.AIPlatform.V1.OpenApiSchema();
+                            Console.WriteLine($"Original parameters JSON for {tool.Function.Name}: {parametersJson}");
                             
-                            // Parse the JSON schema and convert to OpenApiSchema
                             using var document = JsonDocument.Parse(parametersJson);
-                            if (document.RootElement.TryGetProperty("type", out var typeElement))
+                            
+                            var openApiSchema = new Google.Cloud.AIPlatform.V1.OpenApiSchema
                             {
-                                openApiSchema.Type = Google.Cloud.AIPlatform.V1.Type.Object;
+                                Type = Google.Cloud.AIPlatform.V1.Type.Object
+                            };
+                            
+                            // Parse properties if they exist
+                            if (document.RootElement.TryGetProperty("properties", out var propertiesElement))
+                            {
+                                foreach (var property in propertiesElement.EnumerateObject())
+                                {
+                                    var propertySchema = new Google.Cloud.AIPlatform.V1.OpenApiSchema
+                                    {
+                                        Type = Google.Cloud.AIPlatform.V1.Type.String // Default to string, Gemini seems to want this
+                                    };
+                                    
+                                    if (property.Value.TryGetProperty("description", out var descElement))
+                                    {
+                                        propertySchema.Description = descElement.GetString() ?? "";
+                                    }
+                                    
+                                    openApiSchema.Properties.Add(property.Name, propertySchema);
+                                }
                             }
                             
-                            // For now, set a basic schema - this could be enhanced to fully parse the JSON schema
+                            // Parse required fields if they exist
+                            if (document.RootElement.TryGetProperty("required", out var requiredElement))
+                            {
+                                foreach (var requiredField in requiredElement.EnumerateArray())
+                                {
+                                    var fieldName = requiredField.GetString();
+                                    if (!string.IsNullOrEmpty(fieldName))
+                                    {
+                                        openApiSchema.Required.Add(fieldName);
+                                    }
+                                }
+                            }
+                            
+                            Console.WriteLine($"Converted OpenApiSchema - Properties: {openApiSchema.Properties.Count}, Required: {openApiSchema.Required.Count}");
                             functionDeclaration.Parameters = openApiSchema;
                         }
                         catch (Exception ex)
@@ -1115,11 +1168,51 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
         }
 
         // Create AutoGen Gemini agent with tools
-        var geminiAgent = await _autoGenGeminiService.CreateGeminiAgentAsync("gemini-2.0-pro", null, geminiTools);
+        var geminiAgent = await _autoGenGeminiService.CreateGeminiAgentAsync(request.Model ?? "gemini-2.0-flash-exp", null, geminiTools);
 
         // Get response from AutoGen
         var result = await _autoGenGeminiService.SendConversationAsync(geminiAgent, autoGenMessages);
-        var content = result.GetContent() ?? "";
+        var getToolCalls = result.GetToolCalls();
+        ChoiceDelta? choiceDelta = null;
+        bool isToolCall = getToolCalls != null && getToolCalls.Any();
+        if (getToolCalls != null && getToolCalls.Any())
+        {
+            choiceDelta = new ChoiceDelta
+            {
+                Index = 0,
+                Delta = new DTOs.OpenAI.MessageDelta
+                {
+                    Role = "assistant",
+                    ToolCalls = getToolCalls.Select(tc => new DTOs.OpenAI.ToolCallDelta
+                    {
+                        Id = tc.ToolCallId ?? Guid.NewGuid().ToString(),
+                        Type = "function",
+                        Function = new DTOs.OpenAI.FunctionCallDelta
+                        {
+                            Name = tc.FunctionName,
+                            Arguments = tc.FunctionArguments
+                        }
+                    }).ToList(),
+                    Content = null
+                }
+            };
+        }
+        else
+        {
+            choiceDelta = new ChoiceDelta
+            {
+                Index = 0,
+                Delta = new DTOs.OpenAI.MessageDelta
+                {
+                    Role = "assistant",
+                    Content = result.GetContent() ?? ""
+                }
+            };
+        }
+
+        var chatId = $"chatcmpl-{Guid.NewGuid():N}";
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var modelName = request.Model ?? "gemini-2.0-pro";
 
         yield return new ChatCompletionChunk
         {
@@ -1128,12 +1221,29 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
             Model = request.Model ?? "gemini-2.0-pro",
             Choices = new List<ChoiceDelta>
             {
-                new()
+                choiceDelta
+            },
+        };
+
+        // Send the final chunk with finish_reason
+        yield return new ChatCompletionChunk
+        {
+            Id = chatId,
+            Object = "chat.completion.chunk",
+            Created = timestamp,
+            Model = modelName,
+            Choices =
+            [
+                new ChoiceDelta
                 {
                     Index = 0,
-                    Delta = new MessageDelta { Content = content }
+                    Delta = new MessageDelta
+                    {
+                        Content = "" // Empty content
+                    },
+                    FinishReason = isToolCall ? "tool_calls" : "stop"
                 }
-            },
+            ]
         };
 
         // await foreach (var message in result)

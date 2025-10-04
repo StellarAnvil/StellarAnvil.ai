@@ -149,6 +149,8 @@ public class ChatController : ControllerBase
     [AllowAnonymous]
     public async Task CreateChatCompletion([FromBody] ChatCompletionRequest request)
     {
+        var fullRequestJson = JsonSerializer.Serialize(request);
+        _logger.LogInformation("Received chat completion request: {RequestJson}", fullRequestJson);
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
@@ -194,43 +196,14 @@ public class ChatController : ControllerBase
         {
             var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
             {
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
             });
 
             await Response.WriteAsync($"data: {json}\n\n");
             await Response.Body.FlushAsync();
         }
-
-        // Send the final chunk with finish_reason
-        var finalChunk = new ChatCompletionResponse
-        {
-            Id = chatId,
-            Object = "chat.completion.chunk",
-            Created = timestamp,
-            Model = modelName,
-            Choices =
-            [
-                new Choice
-                {
-                    Index = 0,
-                    Delta = new ChatMessage
-                    {
-                        Content = "" // Empty content
-                    },
-                    FinishReason = "stop"
-                }
-            ]
-        };
-
-        var finalChunkJson = JsonSerializer.Serialize(finalChunk, new JsonSerializerOptions
-        {
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        });
-
-        await Response.WriteAsync($"data: {finalChunkJson}\n\n");
-        await Response.Body.FlushAsync();
-                
-            
+        
         // Send the final [DONE] message
         await Response.WriteAsync("data: [DONE]\n\n");
         await Response.Body.FlushAsync();

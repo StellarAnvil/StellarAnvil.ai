@@ -32,14 +32,21 @@ public class AutoGenGeminiService : IAutoGenGeminiService
 
         try
         {
+            // Map OpenAI-style model names to Gemini API format
+            var geminiModel = "gemini-flash-latest";
+
+            _logger.LogInformation("Creating Gemini agent with model: {InputModel} -> {GeminiModel}", model, geminiModel);
+            
             var geminiAgent = new GeminiChatAgent(
-                name: "gemini-agent",
-                model: model,
+                name: "assistant",
+                model: geminiModel,
                 apiKey: _geminiApiKey,
                 systemMessage: systemMessage ?? "You are a helpful AI assistant",
-                tools: tools);
+                tools: tools)
+            .RegisterMessageConnector()
+            .RegisterPrintMessage();
 
-            _logger.LogInformation("Created Gemini agent with model: {Model} and {ToolCount} tools", model, tools?.Length ?? 0);
+            _logger.LogInformation("Created Gemini agent successfully with {ToolCount} tools", tools?.Length ?? 0);
             return geminiAgent;
         }
         catch (Exception ex)
@@ -61,12 +68,28 @@ public class AutoGenGeminiService : IAutoGenGeminiService
         }
     }
 
-    public async Task<IMessage> SendConversationAsync(IAgent agent, IEnumerable<IMessage> messages)
+    public async Task<IMessage> SendConversationAsync(IAgent agent, IEnumerable<IMessage<Content>> messages)
     {
         try
         {
-            var response = await agent.GenerateReplyAsync(messages);
-            return response;
+            // GeminiChatAgent supports IMessage<Content> directly
+            // Pass the messages directly to the agent
+            // lets do 3 retries with half second delay between each
+            for (int i = 0; i < 3; i++)
+            {
+                try
+                {
+                    var response = await agent.GenerateReplyAsync(messages);
+                    return response;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Attempt {Attempt} to send conversation failed, retrying...", i + 1);
+                    await Task.Delay(500);
+                }
+            }
+
+            throw new Exception("Failed to send conversation after multiple attempts");
         }
         catch (Exception ex)
         {

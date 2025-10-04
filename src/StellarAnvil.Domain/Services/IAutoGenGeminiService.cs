@@ -31,5 +31,5 @@ public interface IAutoGenGeminiService
     /// <param name="agent">The AutoGen agent</param>
     /// <param name="messages">The conversation messages</param>
     /// <returns>The agent's response</returns>
-    Task<IMessage> SendConversationAsync(IAgent agent, IEnumerable<IMessage> messages);
+    Task<IMessage> SendConversationAsync(IAgent agent, IEnumerable<IMessage<Content>> messages);
 }

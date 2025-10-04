@@ -28,8 +28,11 @@ public class Choice
     [JsonPropertyName("index")]
     public int Index { get; set; }
 
+    [JsonPropertyName("message")]
+    public ChatMessage? Message { get; set; }
+
     [JsonPropertyName("delta")]
-    public ChatMessage Delta { get; set; } = new();
+    public ChatMessage? Delta { get; set; }
 
     [JsonPropertyName("finish_reason")]
     public string? FinishReason { get; set; }
