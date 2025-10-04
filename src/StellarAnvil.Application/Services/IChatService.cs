@@ -7,4 +7,5 @@ public interface IChatService
     IAsyncEnumerable<ChatCompletionChunk> ProcessChatCompletionAsync(ChatCompletionRequest request);
     Task<ModelResponse> GetModelsAsync();
     Task<string?> ExtractUserNameFromPrompt(string prompt);
+    IAsyncEnumerable<ChatCompletionChunk> ProcessChatWithFunctionCallsAsync(ChatCompletionRequest request);
 }

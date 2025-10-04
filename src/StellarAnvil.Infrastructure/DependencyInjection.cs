@@ -5,6 +5,7 @@ using StellarAnvil.Domain.Services;
 using StellarAnvil.Infrastructure.Data;
 using StellarAnvil.Infrastructure.Repositories;
 using StellarAnvil.Infrastructure.Services;
+using StellarAnvil.Infrastructure.AI;
 
 namespace StellarAnvil.Infrastructure;
 
@@ -19,9 +20,10 @@ public static class DependencyInjection
         // Repositories
         services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
 
-            // Domain Services
-            services.AddScoped<IWorkflowService, WorkflowService>();
-            services.AddScoped<ITeamMemberService, TeamMemberService>();
+        // Domain Services
+        services.AddScoped<IWorkflowService, WorkflowService>();
+        services.AddScoped<ITeamMemberService, TeamMemberService>();
+        services.AddScoped<IAutoGenGeminiService, AutoGenGeminiService>();
 
 
             return services;

@@ -190,7 +190,7 @@ public class ChatController : ControllerBase
         await Task.Delay(100);
 
         // CHUNK 2: Actual content
-        await foreach (var chunk in _chatService.ProcessChatCompletionAsync(request))
+        await foreach (var chunk in _chatService.ProcessChatWithFunctionCallsAsync(request))
         {
             var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions
             {

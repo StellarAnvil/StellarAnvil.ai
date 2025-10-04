@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AutoGen.Gemini" Version="0.0.16" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="9.0.1-preview.1.24570.5" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="9.9.0-preview.1.25458.4" />
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.32.0" />

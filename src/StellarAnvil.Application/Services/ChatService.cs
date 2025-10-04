@@ -1,5 +1,7 @@
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
+using AutoGen.Core;
+using Google.Cloud.AIPlatform.V1;
 using StellarAnvil.Application.DTOs;
 using StellarAnvil.Application.DTOs.OpenAI;
 using StellarAnvil.Domain.Services;
@@ -8,20 +10,23 @@ using StellarAnvil.Domain.Entities;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace StellarAnvil.Application.Services;
 
 public class ChatService : IChatService
 {
     private readonly IKernelFactoryService _kernelFactory;
+    private readonly IAutoGenGeminiService _autoGenGeminiService;
     private readonly ITeamMemberService _teamMemberService;
     private readonly IAIClientService _aiClientService;
     private readonly ITaskApplicationService _taskApplicationService;
     private readonly AutoGenCollaborationService _collaborationService;
 
-    public ChatService(IKernelFactoryService kernelFactory, ITeamMemberService teamMemberService, IAIClientService aiClientService, ITaskApplicationService taskApplicationService, AutoGenCollaborationService collaborationService)
+    public ChatService(IKernelFactoryService kernelFactory, IAutoGenGeminiService autoGenGeminiService, ITeamMemberService teamMemberService, IAIClientService aiClientService, ITaskApplicationService taskApplicationService, AutoGenCollaborationService collaborationService)
     {
         _kernelFactory = kernelFactory;
+        _autoGenGeminiService = autoGenGeminiService;
         _teamMemberService = teamMemberService;
         _aiClientService = aiClientService;
         _taskApplicationService = taskApplicationService;
@@ -66,37 +71,42 @@ public class ChatService : IChatService
         
         try
         {
+            var collaborationResult = await _collaborationService.CollaborateAsync(
+                Guid.NewGuid(),
+                TeamMemberRole.BusinessAnalyst,
+                "Test Task",
+                "This is a test collaboration for debugging purposes.");
             // Step 1: Extract user name from messages
-            var userName = await ExtractUserNameFromMessages(request.Messages);
-            if (string.IsNullOrEmpty(userName))
-            {
-                workflow = StreamMessage("I need to know who you are to help you. Please introduce yourself by saying 'I am [your name]'.", chatId, created, request.Model);
-            }
-            else
-            {
-                // Step 2: Get user from database
-                var user = await _teamMemberService.GetTeamMemberByNameAsync(userName);
-                if (user == null)
-                {
-                    workflow = StreamMessage($"Hey {userName}, I did not find you in my system, can you please request admin to add you?", chatId, created, request.Model);
-                }
-                else
-                {
-                    // Step 3: Check for existing task context in chat history
-                    var existingTaskId = ExtractTaskNumberFromMessages(request.Messages);
+            // var userName = await ExtractUserNameFromMessages(request.Messages);
+            // if (string.IsNullOrEmpty(userName))
+            // {
+            //     workflow = StreamMessage("I need to know who you are to help you. Please introduce yourself by saying 'I am [your name]'.", chatId, created, request.Model);
+            // }
+            // else
+            // {
+            //     // Step 2: Get user from database
+            //     var user = await _teamMemberService.GetTeamMemberByNameAsync(userName);
+            //     if (user == null)
+            //     {
+            //         workflow = StreamMessage($"Hey {userName}, I did not find you in my system, can you please request admin to add you?", chatId, created, request.Model);
+            //     }
+            //     else
+            //     {
+            //         // Step 3: Check for existing task context in chat history
+            //         var existingTaskId = ExtractTaskNumberFromMessages(request.Messages);
                     
-                    if (existingTaskId.HasValue)
-                    {
-                        // Continue existing task
-                        workflow = ContinueExistingTaskWorkflowAsync(existingTaskId.Value, request, user, chatId, created);
-                    }
-                    else
-                    {
-                        // New task creation workflow
-                        workflow = CreateNewTaskWorkflowAsync(request, user, chatId, created);
-                    }
-                }
-            }
+            //         if (existingTaskId.HasValue)
+            //         {
+            //             // Continue existing task
+            //             workflow = ContinueExistingTaskWorkflowAsync(existingTaskId.Value, request, user, chatId, created);
+            //         }
+            //         else
+            //         {
+            //             // New task creation workflow
+            //             workflow = CreateNewTaskWorkflowAsync(request, user, chatId, created);
+            //         }
+            //     }
+            // }
         }
         catch (Exception ex)
         {
@@ -141,7 +151,7 @@ public class ChatService : IChatService
                 userName = "Unknown User";
             }
 
-            // Step 1: Use default Ollama model for task creation and assignment
+            // Step 1: Use default Semantic Kernel model for task creation and assignment, but with AutoGen for the specific Gemini call
             var defaultKernel = await _kernelFactory.CreateKernelForModelAsync("gemini-2.5-pro");
             
             var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
@@ -160,6 +170,7 @@ When the user says things like:
 - ""Help me build something""
 
 Do NOT provide direct solutions. Always create a task first using CreateTaskAsync function.");
+            
             // Add user messages to chat history
             foreach (var message in request.Messages)
             {
@@ -173,61 +184,93 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
                 chatHistory.AddMessage(role, message.Content ?? "");
             }
 
-            // Enable automatic function calling for task creation
-#pragma warning disable SKEXP0070
-            var executionSettings = new Microsoft.SemanticKernel.Connectors.Google.GeminiPromptExecutionSettings()
+            // Use AutoGen Gemini instead of Semantic Kernel for the execution
+            // Convert OpenAI tools to Google Cloud AI Platform tools if available
+            Google.Cloud.AIPlatform.V1.Tool[]? geminiTools = null;
+            if (request.Tools != null && request.Tools.Any())
             {
-                ToolCallBehavior = Microsoft.SemanticKernel.Connectors.Google.GeminiToolCallBehavior.AutoInvokeKernelFunctions,
-                MaxTokens = 4000,
-                Temperature = 0.7f
-            };
-#pragma warning restore SKEXP0070
-
-            // Get chat completion service from kernel and process with SK
-            var chatCompletionService = defaultKernel.GetRequiredService<Microsoft.SemanticKernel.ChatCompletion.IChatCompletionService>();
-            var result = await chatCompletionService.GetChatMessageContentsAsync(
-                chatHistory, 
-                executionSettings, 
-                defaultKernel);
-            
-            var skResponse = result.LastOrDefault()?.Content ?? "";
-            
-            // Check if SK successfully called the CreateTaskAsync function
-            // Debug: Log all metadata keys
-
-            var metaData = result.SelectMany(r => r.Metadata).Aggregate("", (a, b) => $"{a}\n Key: {b.Key}, Value: {b.Value}");
-
-            Console.WriteLine($"Metadata: {metaData}");
-            foreach (var message in result)
-            {
-                if (message.Metadata != null)
+                var toolList = new List<Google.Cloud.AIPlatform.V1.Tool>();
+                foreach (var tool in request.Tools)
                 {
-                    foreach (var key in message.Metadata.Keys)
+                    if (tool.Type == "function" && tool.Function != null)
                     {
-                        Console.WriteLine($"Metadata key: {key}, Metadata value: {message.Metadata[key]}");
+                        var functionDeclaration = new Google.Cloud.AIPlatform.V1.FunctionDeclaration
+                        {
+                            Name = tool.Function.Name,
+                            Description = tool.Function.Description ?? "",
+                        };
+
+                        // Convert OpenAI parameters to Google Cloud AI Platform schema
+                        if (tool.Function.Parameters != null)
+                        {
+                            try
+                            {
+                                var parametersJson = JsonSerializer.Serialize(tool.Function.Parameters);
+                                var openApiSchema = new Google.Cloud.AIPlatform.V1.OpenApiSchema();
+                                
+                                // Parse the JSON schema and convert to OpenApiSchema
+                                using var document = JsonDocument.Parse(parametersJson);
+                                if (document.RootElement.TryGetProperty("type", out var typeElement))
+                                {
+                                    openApiSchema.Type = Google.Cloud.AIPlatform.V1.Type.Object;
+                                }
+                                
+                                // For now, set a basic schema - this could be enhanced to fully parse the JSON schema
+                                functionDeclaration.Parameters = openApiSchema;
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Failed to convert parameters for function {tool.Function.Name}: {ex.Message}");
+                            }
+                        }
+
+                        var geminiTool = new Google.Cloud.AIPlatform.V1.Tool
+                        {
+                            FunctionDeclarations = { functionDeclaration }
+                        };
+                        toolList.Add(geminiTool);
                     }
                 }
+                geminiTools = toolList.ToArray();
             }
-
-            Console.WriteLine($"SK Response: {skResponse}");
+            
+            var geminiAgent = await _autoGenGeminiService.CreateGeminiAgentAsync("gemini-2.0-flash-exp", null, geminiTools);
+            var autoGenMessages = new List<AutoGen.Core.IMessage>();
+            foreach (var msg in chatHistory)
+            {
+                Role role;
+                if (msg.Role == Microsoft.SemanticKernel.ChatCompletion.AuthorRole.System)
+                    role = Role.System;
+                else if (msg.Role == Microsoft.SemanticKernel.ChatCompletion.AuthorRole.Assistant)
+                    role = Role.Assistant;
+                else
+                    role = Role.User;
+                
+                autoGenMessages.Add(new TextMessage(role, msg.Content ?? ""));
+            }
+            
+            var response = await _autoGenGeminiService.SendConversationAsync(geminiAgent, autoGenMessages);
+            var responseContent = response.GetContent() ?? "";
+            
+            Console.WriteLine($"AutoGen Gemini Response: {responseContent}");
             
             // Check if function was called successfully by looking at the response content
             // This works for all providers (OpenAI, Gemini, Claude, Ollama)
-            bool functionWasCalled = skResponse.Contains("task number is") || 
-                                     skResponse.Contains("Task #") || 
-                                     skResponse.Contains("assigned to") ||
-                                     System.Text.RegularExpressions.Regex.IsMatch(skResponse, @"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}");
+            bool functionWasCalled = responseContent.Contains("task number is") || 
+                                     responseContent.Contains("Task #") || 
+                                     responseContent.Contains("assigned to") ||
+                                     System.Text.RegularExpressions.Regex.IsMatch(responseContent, @"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}");
             
             if (functionWasCalled)
             {
-                // SK successfully called a function - extract task info from the natural response
+                // Function successfully called - extract task info from the natural response
                 // Try multiple GUID extraction patterns to handle different response formats
                 
                 Guid taskGuid = Guid.Empty;
                 bool guidFound = false;
                 
                 // Pattern 1: "Task #guid" format
-                var taskGuidMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"Task #([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
+                var taskGuidMatch = System.Text.RegularExpressions.Regex.Match(responseContent, @"Task #([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
                 if (taskGuidMatch.Success && Guid.TryParse(taskGuidMatch.Groups[1].Value, out taskGuid))
                 {
                     guidFound = true;
@@ -236,7 +279,7 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
                 // Pattern 2: "task number is guid" format (for Gemini responses)
                 if (!guidFound)
                 {
-                    var taskNumberMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"task number is ([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
+                    var taskNumberMatch = System.Text.RegularExpressions.Regex.Match(responseContent, @"task number is ([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
                     if (taskNumberMatch.Success && Guid.TryParse(taskNumberMatch.Groups[1].Value, out taskGuid))
                     {
                         guidFound = true;
@@ -246,7 +289,7 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
                 // Pattern 3: Any GUID in the response
                 if (!guidFound)
                 {
-                    var anyGuidMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
+                    var anyGuidMatch = System.Text.RegularExpressions.Regex.Match(responseContent, @"([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})");
                     if (anyGuidMatch.Success && Guid.TryParse(anyGuidMatch.Groups[1].Value, out taskGuid))
                     {
                         guidFound = true;
@@ -259,14 +302,14 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
                     // Convert GUID to int for the existing AutoGen workflow (use GetHashCode for consistency)
                     var taskNumber = Math.Abs(taskGuid.GetHashCode());
                     Console.WriteLine($"Extracted task GUID: {taskGuid}, converted to task number: {taskNumber}");
-                    resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, skResponse, chatId, created, request.Model);
+                    resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, responseContent, chatId, created, request.Model);
                 }
                 else
                 {
-                    // Try to extract task ID from JSON response if present in the SK response
+                    // Try to extract task ID from JSON response if present in the AutoGen response
                     try
                     {
-                        var jsonMatch = System.Text.RegularExpressions.Regex.Match(skResponse, @"\{.*""taskId"".*\}");
+                        var jsonMatch = System.Text.RegularExpressions.Regex.Match(responseContent, @"\{.*""taskId"".*\}");
                         if (jsonMatch.Success)
                         {
                             using var document = JsonDocument.Parse(jsonMatch.Value);
@@ -277,38 +320,38 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
                                 {
                                     var taskNumber = Math.Abs(taskId.GetHashCode());
                                     Console.WriteLine($"Extracted task GUID from JSON: {taskId}, converted to task number: {taskNumber}");
-                                    resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, skResponse, chatId, created, request.Model);
+                                    resultWorkflow = StreamTaskSuccessAndAutogenCollaboration(taskNumber, responseContent, chatId, created, request.Model);
                                 }
                                 else
                                 {
                                     Console.WriteLine("Failed to parse GUID from JSON taskId");
-                                    resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                                    resultWorkflow = StreamMessage(responseContent, chatId, created, request.Model);
                                 }
                             }
                             else
                             {
                                 Console.WriteLine("No taskId property found in JSON");
-                                resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                                resultWorkflow = StreamMessage(responseContent, chatId, created, request.Model);
                             }
                         }
                         else
                         {
-                            // SK called function but we couldn't extract task ID - stream the response anyway
+                            // AutoGen called function but we couldn't extract task ID - stream the response anyway
                             Console.WriteLine("No JSON found in response, streaming original message");
-                            resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                            resultWorkflow = StreamMessage(responseContent, chatId, created, request.Model);
                         }
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"Error parsing task ID from JSON: {ex.Message}");
-                        resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                        resultWorkflow = StreamMessage(responseContent, chatId, created, request.Model);
                     }
                 }
             }
             else
             {
-                // No function was called - just stream the SK response
-                resultWorkflow = StreamMessage(skResponse, chatId, created, request.Model);
+                // No function was called - just stream the AutoGen response
+                resultWorkflow = StreamMessage(responseContent, chatId, created, request.Model);
             }
         }
         catch (Exception ex)
@@ -326,10 +369,10 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
     }
 
     private async IAsyncEnumerable<ChatCompletionChunk> StreamTaskSuccessAndAutogenCollaboration(
-        int taskNumber, string skResponse, string chatId, long created, string model)
+        int taskNumber, string responseContent, string chatId, long created, string model)
     {
         // Stream the SK response (which includes task creation confirmation)
-        await foreach (var chunk in StreamMessage(skResponse, chatId, created, model))
+        await foreach (var chunk in StreamMessage(responseContent, chatId, created, model))
         {
             yield return chunk;
         }
@@ -595,6 +638,11 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
         }
 
         // Get the assigned team member for this task
+        if (task.AssigneeId == null)
+        {
+            return CreateErrorResponse($"Task #{taskNumber} doesn't have an assigned team member. Please contact admin.");
+        }
+        
         var assignedMember = await _teamMemberService.GetByIdAsync(task.AssigneeId.Value);
         if (assignedMember == null)
         {
@@ -632,7 +680,7 @@ Do NOT provide direct solutions. Always create a task first using CreateTaskAsyn
         {
             Id = $"chatcmpl-{Guid.NewGuid():N}",
             Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            Model = modelToUse,
+            Model = modelToUse ?? "unknown",
             Choices = new List<Choice>
             {
                 new()
@@ -902,7 +950,7 @@ If you need clarification or have questions about this task, ask the user direct
         
         return new ModelResponse
         {
-            Data = supportedModels.Select(modelId => new Model 
+            Data = supportedModels.Select(modelId => new DTOs.OpenAI.Model 
             { 
                 Id = modelId, 
                 Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
@@ -999,6 +1047,115 @@ IMPORTANT: When working on tasks, always mention the task number in your respons
                 }
             }
         };
+    }
+
+    public async IAsyncEnumerable<ChatCompletionChunk> ProcessChatWithFunctionCallsAsync(ChatCompletionRequest request)
+    {
+        // Convert request messages to AutoGen format
+        var autoGenMessages = new List<IMessage>();
+        foreach (var msg in request.Messages)
+        {
+            var role = msg.Role switch
+            {
+                "system" => Role.System,
+                "assistant" => Role.Assistant, 
+                "tool" => Role.Assistant, // Map tool to assistant for AutoGen
+                _ => Role.User
+            };
+            autoGenMessages.Add(new TextMessage(role, msg.Content ?? ""));
+        }
+
+        // Convert OpenAI tools to Google Cloud AI Platform tools if available
+        Google.Cloud.AIPlatform.V1.Tool[]? geminiTools = null;
+        if (request.Tools != null && request.Tools.Any())
+        {
+            var toolList = new List<Google.Cloud.AIPlatform.V1.Tool>();
+            foreach (var tool in request.Tools)
+            {
+                if (tool.Type == "function" && tool.Function != null)
+                {
+                    var functionDeclaration = new Google.Cloud.AIPlatform.V1.FunctionDeclaration
+                    {
+                        Name = tool.Function.Name,
+                        Description = tool.Function.Description ?? "",
+                    };
+
+                    // Convert OpenAI parameters to Google Cloud AI Platform schema
+                    if (tool.Function.Parameters != null)
+                    {
+                        try
+                        {
+                            var parametersJson = JsonSerializer.Serialize(tool.Function.Parameters);
+                            var openApiSchema = new Google.Cloud.AIPlatform.V1.OpenApiSchema();
+                            
+                            // Parse the JSON schema and convert to OpenApiSchema
+                            using var document = JsonDocument.Parse(parametersJson);
+                            if (document.RootElement.TryGetProperty("type", out var typeElement))
+                            {
+                                openApiSchema.Type = Google.Cloud.AIPlatform.V1.Type.Object;
+                            }
+                            
+                            // For now, set a basic schema - this could be enhanced to fully parse the JSON schema
+                            functionDeclaration.Parameters = openApiSchema;
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to convert parameters for function {tool.Function.Name}: {ex.Message}");
+                        }
+                    }
+
+                    var geminiTool = new Google.Cloud.AIPlatform.V1.Tool
+                    {
+                        FunctionDeclarations = { functionDeclaration }
+                    };
+                    toolList.Add(geminiTool);
+                }
+            }
+            geminiTools = toolList.ToArray();
+        }
+
+        // Create AutoGen Gemini agent with tools
+        var geminiAgent = await _autoGenGeminiService.CreateGeminiAgentAsync("gemini-2.0-pro", null, geminiTools);
+
+        // Get response from AutoGen
+        var result = await _autoGenGeminiService.SendConversationAsync(geminiAgent, autoGenMessages);
+        var content = result.GetContent() ?? "";
+
+        yield return new ChatCompletionChunk
+        {
+            Id = $"chatcmpl-{Guid.NewGuid():N}",
+            Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Model = request.Model ?? "gemini-2.0-pro",
+            Choices = new List<ChoiceDelta>
+            {
+                new()
+                {
+                    Index = 0,
+                    Delta = new MessageDelta { Content = content }
+                }
+            },
+        };
+
+        // await foreach (var message in result)
+        // {
+        //     var content = (message as IMessage)?.GetContent() ?? "";
+        //     yield return new ChatCompletionChunk
+        //     {
+        //         Id = $"chatcmpl-{Guid.NewGuid():N}",
+        //         Created = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        //         Model = request.Model ?? "gemini-2.0-flash-exp",
+        //         Choices = new List<ChoiceDelta>
+        //         {
+        //             new()
+        //             {
+        //                 Index = 0,
+        //                 Delta = new MessageDelta { Content = content + " " }
+        //             }
+        //         },
+
+        //     };
+        //     await System.Threading.Tasks.Task.Delay(50); // Simulate real-time typing
+        // }
     }
 
     private static int EstimateTokens(string text)

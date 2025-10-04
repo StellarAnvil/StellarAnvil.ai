@@ -6,6 +6,7 @@ using StellarAnvil.Application.Services;
 using StellarAnvil.Application.Mappings;
 using StellarAnvil.Application.Skills;
 using StellarAnvil.Domain.Services;
+using Microsoft.SemanticKernel.Connectors.Google;
 
 namespace StellarAnvil.Application;
 
