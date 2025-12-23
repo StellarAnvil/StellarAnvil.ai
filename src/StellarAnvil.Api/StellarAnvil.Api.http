@@ -1,0 +1,6 @@
+@StellarAnvil.Api_HostAddress = http://localhost:5195
+
+GET {{StellarAnvil.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

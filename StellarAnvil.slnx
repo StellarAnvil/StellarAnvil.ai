@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/StellarAnvil.Api/StellarAnvil.Api.csproj" />
+  </Folder>
+</Solution>
