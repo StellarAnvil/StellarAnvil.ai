@@ -1,10 +1,10 @@
 using AspNetCore.Authentication.ApiKey;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.OpenApi.Models;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Scalar.AspNetCore;
 using Serilog;
 using StellarAnvil.Api.Authentication;
 using StellarAnvil.Api.Middleware;
@@ -13,7 +13,6 @@ using StellarAnvil.Application;
 using StellarAnvil.Domain.Enums;
 using StellarAnvil.Infrastructure;
 using StellarAnvil.Infrastructure.Data;
-using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,40 +40,15 @@ builder.Host.UseSerilog();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// Swagger configuration
-builder.Services.AddSwaggerGen(c =>
+// OpenAPI configuration using .NET 10 native support
+builder.Services.AddOpenApi("v1", options =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo 
-    { 
-        Title = "StellarAnvil API", 
-        Version = "v1",
-        Description = "AI-powered SDLC orchestration platform"
-    });
-    
-    c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
-        Description = "API Key needed to access the endpoints. X-API-Key: My_API_Key",
-        In = ParameterLocation.Header,
-        Name = "X-API-Key",
-        Type = SecuritySchemeType.ApiKey
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Name = "ApiKey",
-                Type = SecuritySchemeType.ApiKey,
-                In = ParameterLocation.Header,
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "ApiKey"
-                }
-            },
-            new string[] {}
-        }
+        document.Info.Title = "StellarAnvil API";
+        document.Info.Version = "v1";
+        document.Info.Description = "AI-powered SDLC orchestration platform";
+        return Task.CompletedTask;
     });
 });
 
@@ -141,7 +115,7 @@ builder.Services.AddOpenTelemetry()
             options.SetDbStatementForStoredProcedure = true;
         })
         .AddConsoleExporter()
-        .AddJaegerExporter())
+        .AddOtlpExporter())
     .WithMetrics(metrics => metrics
         .AddMeter("StellarAnvil.Api")
         .AddAspNetCoreInstrumentation()
@@ -165,13 +139,16 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
-// Enable Swagger in all environments
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// Enable OpenAPI document endpoint
+app.MapOpenApi();
+
+// Enable Scalar API Reference UI
+app.MapScalarApiReference(options =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "StellarAnvil API V1");
-    c.RoutePrefix = "swagger"; // Serve Swagger UI at /swagger
-    c.DocumentTitle = "StellarAnvil API Documentation";
+    options
+        .WithTitle("StellarAnvil API")
+        .WithTheme(ScalarTheme.BluePlanet)
+        .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
 });
 
 // Custom middleware
