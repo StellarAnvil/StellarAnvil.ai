@@ -21,20 +21,18 @@ StellarAnvil is an AI-powered SDLC (Software Development Life Cycle) orchestrati
 
 ## 🛠️ Technology Stack
 
-- **.NET 9**: Latest .NET framework
+- **.NET 10**: Latest .NET framework
 - **PostgreSQL**: Primary database
 - **Entity Framework Core**: ORM and migrations
-- **Semantic Kernel**: AI orchestration and planning
-- **Microsoft.Extensions.AI**: AI model connectors
-- **AutoGen**: Multi-agent collaboration
+- **Microsoft Agent Framework**: Agent framework
 - **Serilog + OpenTelemetry**: Logging and observability
 - **Aspire**: Local development orchestration
 - **Docker**: Containerization and local services
 
 ## 📋 Prerequisites
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+- [Colima](https://github.com/abiosoft/colima)
 - [Git](https://git-scm.com/)
 
 ## 🚀 Quick Start
@@ -242,5 +240,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Microsoft Semantic Kernel](https://github.com/microsoft/semantic-kernel)
 - [Microsoft.Extensions.AI](https://github.com/dotnet/extensions)
+- [Microsoft Agent Framework](https://github.com/microsoft/agent-framework)
 - [Continue.dev](https://continue.dev/) for inspiration on AI development tools
 - [OpenAI](https://openai.com/) for API compatibility standards
