@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using StellarAnvil.Api.Models.OpenAI;
+using StellarAnvil.Api.Application.DTOs;
 
-namespace StellarAnvil.Api.Helpers;
+namespace StellarAnvil.Api.Infrastructure.Helpers;
 
 /// <summary>
 /// Converts OpenAI-format tools to Microsoft.Extensions.AI AITool format

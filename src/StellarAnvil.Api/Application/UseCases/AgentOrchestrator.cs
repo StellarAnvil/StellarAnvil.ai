@@ -2,27 +2,29 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
-using StellarAnvil.Api.Helpers;
-using StellarAnvil.Api.Models.OpenAI;
-using StellarAnvil.Api.Models.Task;
+using StellarAnvil.Api.Application.DTOs;
+using StellarAnvil.Api.Application.Results;
+using StellarAnvil.Api.Domain.Entities;
+using StellarAnvil.Api.Domain.Interfaces;
+using StellarAnvil.Api.Infrastructure.Helpers;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
-using ChatMessage = StellarAnvil.Api.Models.OpenAI.ChatMessage;
+using ChatMessage = StellarAnvil.Api.Application.DTOs.ChatMessage;
 
-namespace StellarAnvil.Api.Services;
+namespace StellarAnvil.Api.Application.UseCases;
 
 public class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly IDeliberationWorkflow _deliberationWorkflow;
-    private readonly ITaskStore _taskStore;
+    private readonly ITaskRepository _taskRepository;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     public AgentOrchestrator(
         IDeliberationWorkflow deliberationWorkflow,
-        ITaskStore taskStore,
+        ITaskRepository taskRepository,
         ILogger<AgentOrchestrator> logger)
     {
         _deliberationWorkflow = deliberationWorkflow;
-        _taskStore = taskStore;
+        _taskRepository = taskRepository;
         _logger = logger;
     }
 
@@ -37,7 +39,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         if (taskId == null)
         {
             // Fresh chat - create new task
-            task = await _taskStore.CreateTaskAsync();
+            task = await _taskRepository.CreateTaskAsync();
             _logger.LogInformation("Created new task {TaskId}", task.TaskId);
             
             // Store the initial user message
@@ -56,7 +58,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         else
         {
             // Continuation - load existing task
-            task = await _taskStore.GetTaskAsync(taskId) 
+            task = await _taskRepository.GetTaskAsync(taskId) 
                 ?? throw new InvalidOperationException($"Task {taskId} not found");
             _logger.LogInformation("Resuming task {TaskId} in state {State}", task.TaskId, task.State);
             
@@ -78,42 +80,41 @@ public class AgentOrchestrator : IAgentOrchestrator
         }
         
         // 2. Run the Manager-controlled deliberation
-        var (responseForUser, isComplete) = await RunManagerDeliberationAsync(task, cancellationToken);
+        var deliberationResult = await RunManagerDeliberationAsync(task, cancellationToken);
         
         // 3. Update state based on Manager's decision
-        task.State = isComplete ? TaskState.Completed : TaskState.AwaitingUser;
+        task.State = deliberationResult.IsComplete ? TaskState.Completed : TaskState.AwaitingUser;
         
         // 4. Save the task state
-        await _taskStore.UpdateTaskAsync(task);
+        await _taskRepository.UpdateTaskAsync(task);
         
         // 5. Stream the response content, then append task ID as final chunk
-        await foreach (var chunk in StreamResponseWithTaskIdAsync(responseForUser, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
+        await foreach (var chunk in StreamResponseWithTaskIdAsync(deliberationResult.Response, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
         {
             yield return chunk;
         }
         
         // Store the assistant response with task ID in user messages
-        var responseWithTaskId = TaskIdHelper.AppendTaskId(responseForUser, task.TaskId);
+        var responseWithTaskId = TaskIdHelper.AppendTaskId(deliberationResult.Response, task.TaskId);
         task.UserMessages.Add(new ChatMessage
         {
             Role = "assistant",
             Content = responseWithTaskId
         });
-        await _taskStore.UpdateTaskAsync(task);
+        await _taskRepository.UpdateTaskAsync(task);
     }
 
     /// <summary>
     /// Runs the Manager-controlled GroupChat workflow.
     /// The Manager Agent decides which agents speak and handles phase transitions.
-    /// Returns the formatted response and whether the workflow is complete.
     /// </summary>
-    private async Task<(string Response, bool IsComplete)> RunManagerDeliberationAsync(
+    private async Task<DeliberationResult> RunManagerDeliberationAsync(
         AgentTask task, 
         CancellationToken cancellationToken)
     {
         if (task.State == TaskState.Completed)
         {
-            return ("Task has been completed successfully! All work has been approved.", true);
+            return new DeliberationResult("Task has been completed successfully! All work has been approved.", true);
         }
         
         _logger.LogInformation("Task {TaskId}: Running Manager-controlled deliberation", task.TaskId);
@@ -122,7 +123,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         var aiTools = ToolConverter.ConvertToAITools(task.Tools);
         
         // Build the Manager-controlled GroupChat workflow with all agents
-        var (workflow, manager) = _deliberationWorkflow.Build(aiTools);
+        var workflowResult = _deliberationWorkflow.Build(aiTools);
         
         // Convert user messages to Microsoft.Extensions.AI format
         var inputMessages = task.UserMessages
@@ -132,7 +133,7 @@ public class AgentOrchestrator : IAgentOrchestrator
             .ToList();
         
         // Execute the workflow
-        var run = await InProcessExecution.StreamAsync(workflow, inputMessages);
+        var run = await InProcessExecution.StreamAsync(workflowResult.Workflow, inputMessages);
         await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
         
         // Collect agent responses - accumulate streaming tokens per agent
@@ -182,16 +183,16 @@ public class AgentOrchestrator : IAgentOrchestrator
         }
         
         // Check if Manager signals completion
-        var isComplete = manager.IsComplete;
+        var isComplete = workflowResult.Manager.IsComplete;
         
         _logger.LogInformation(
             "Task {TaskId}: Deliberation complete. IsComplete={IsComplete}, IsAwaitingUser={IsAwaitingUser}, Reason={Reason}",
-            task.TaskId, manager.IsComplete, manager.IsAwaitingUser, manager.LastReasoning);
+            task.TaskId, workflowResult.Manager.IsComplete, workflowResult.Manager.IsAwaitingUser, workflowResult.Manager.LastReasoning);
         
         // Format the final response for the user
         var formattedResponse = FormatDeliberationOutput(agentResponses, isComplete);
         
-        return (formattedResponse, isComplete);
+        return new DeliberationResult(formattedResponse, isComplete);
     }
 
     private static string FormatDeliberationOutput(List<(string Agent, string Response)> responses, bool isComplete)
@@ -325,3 +326,4 @@ public class AgentOrchestrator : IAgentOrchestrator
         };
     }
 }
+

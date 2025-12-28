@@ -1,14 +1,14 @@
 using System.Text.Json.Serialization;
 
-namespace StellarAnvil.Api.Models.OpenAI;
+namespace StellarAnvil.Api.Application.DTOs;
 
-public record ChatCompletionResponse
+public record ChatCompletionChunk
 {
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
     [JsonPropertyName("object")]
-    public string Object { get; init; } = "chat.completion";
+    public string Object { get; init; } = "chat.completion.chunk";
 
     [JsonPropertyName("created")]
     public long Created { get; init; }
@@ -17,22 +17,16 @@ public record ChatCompletionResponse
     public required string Model { get; init; }
 
     [JsonPropertyName("choices")]
-    public required List<Choice> Choices { get; init; }
-
-    [JsonPropertyName("usage")]
-    public Usage? Usage { get; init; }
+    public required List<ChunkChoice> Choices { get; init; }
 }
 
-public record Choice
+public record ChunkChoice
 {
     [JsonPropertyName("index")]
     public int Index { get; init; }
 
-    [JsonPropertyName("message")]
-    public ChatMessage? Message { get; init; }
-
     [JsonPropertyName("delta")]
-    public ChatMessageDelta? Delta { get; init; }
+    public required ChatMessageDelta Delta { get; init; }
 
     [JsonPropertyName("finish_reason")]
     public string? FinishReason { get; init; }
@@ -72,17 +66,5 @@ public record FunctionCallDelta
 
     [JsonPropertyName("arguments")]
     public string? Arguments { get; init; }
-}
-
-public record Usage
-{
-    [JsonPropertyName("prompt_tokens")]
-    public int PromptTokens { get; init; }
-
-    [JsonPropertyName("completion_tokens")]
-    public int CompletionTokens { get; init; }
-
-    [JsonPropertyName("total_tokens")]
-    public int TotalTokens { get; init; }
 }
 

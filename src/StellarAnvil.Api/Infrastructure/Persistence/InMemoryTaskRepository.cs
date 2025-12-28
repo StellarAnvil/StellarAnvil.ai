@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
-using StellarAnvil.Api.Models.Task;
+using StellarAnvil.Api.Domain.Entities;
+using StellarAnvil.Api.Domain.Interfaces;
 
-namespace StellarAnvil.Api.Services;
+namespace StellarAnvil.Api.Infrastructure.Persistence;
 
-public class InMemoryTaskStore : ITaskStore
+public class InMemoryTaskRepository : ITaskRepository
 {
     private readonly ConcurrentDictionary<string, AgentTask> _tasks = new();
     
@@ -14,7 +15,6 @@ public class InMemoryTaskStore : ITaskStore
         {
             TaskId = taskId,
             State = TaskState.Created,
-            CurrentPhase = TaskPhase.BA,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -34,11 +34,6 @@ public class InMemoryTaskStore : ITaskStore
         task.UpdatedAt = DateTime.UtcNow;
         _tasks[task.TaskId] = task;
         return Task.CompletedTask;
-    }
-    
-    public Task<bool> ExistsAsync(string taskId)
-    {
-        return Task.FromResult(_tasks.ContainsKey(taskId));
     }
     
     private static string GenerateTaskId()

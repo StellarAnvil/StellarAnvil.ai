@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
-using StellarAnvil.Api.Models.OpenAI;
+using StellarAnvil.Api.Application.DTOs;
 
-namespace StellarAnvil.Api.Helpers;
+namespace StellarAnvil.Api.Infrastructure.Helpers;
 
 public static partial class TaskIdHelper
 {
@@ -42,15 +42,6 @@ public static partial class TaskIdHelper
     public static string AppendTaskId(string response, string taskId)
     {
         return $"{response}\n\n<!-- task:{taskId} -->";
-    }
-    
-    /// <summary>
-    /// Removes task ID marker from a message content.
-    /// Useful for displaying clean content without the marker.
-    /// </summary>
-    public static string RemoveTaskId(string content)
-    {
-        return TaskIdPattern().Replace(content, "").Trim();
     }
 }
 

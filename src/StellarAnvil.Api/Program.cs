@@ -1,8 +1,11 @@
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Scalar.AspNetCore;
-using StellarAnvil.Api.Models.OpenAI;
-using StellarAnvil.Api.Services;
+using StellarAnvil.Api.Application.DTOs;
+using StellarAnvil.Api.Application.UseCases;
+using StellarAnvil.Api.Domain.Interfaces;
+using StellarAnvil.Api.Infrastructure.AI;
+using StellarAnvil.Api.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,19 +21,15 @@ builder.WebHost.ConfigureKestrel(options =>
 // Add services to the container.
 builder.Services.AddOpenApi();
 
-// Register Task Store (in-memory for now, can be swapped to database later)
-builder.Services.AddSingleton<ITaskStore, InMemoryTaskStore>();
-
-// Register Agent Registry (loads system prompts from SystemPrompts folder)
+// Domain Interfaces -> Infrastructure Implementations
+builder.Services.AddSingleton<ITaskRepository, InMemoryTaskRepository>();
 builder.Services.AddSingleton<IAgentRegistry, AgentRegistry>();
 
-// Register Agent Factory (creates ChatClientAgent instances for Agent Framework)
+// Infrastructure Services
 builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
-
-// Register Deliberation Workflow (builds GroupChat workflows using Agent Framework)
 builder.Services.AddSingleton<IDeliberationWorkflow, DeliberationWorkflow>();
 
-// Register Agent Orchestrator (coordinates multi-agent workflow)
+// Application Use Cases
 builder.Services.AddScoped<IAgentOrchestrator, AgentOrchestrator>();
 
 var app = builder.Build();

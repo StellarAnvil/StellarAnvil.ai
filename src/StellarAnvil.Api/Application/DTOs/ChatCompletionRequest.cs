@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace StellarAnvil.Api.Models.OpenAI;
+namespace StellarAnvil.Api.Application.DTOs;
 
 public record ChatCompletionRequest
 {

@@ -4,7 +4,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 
-namespace StellarAnvil.Api.Services;
+namespace StellarAnvil.Api.Infrastructure.AI;
 
 /// <summary>
 /// Decision made by the Manager Agent for speaker selection.
@@ -54,6 +54,7 @@ public class ManagerGroupChatManager : GroupChatManager
     /// Selects the next speaker by asking the Manager Agent to analyze the conversation
     /// and decide which specialized agent should speak next.
     /// </summary>
+#pragma warning disable CS8609 // Nullability of reference types in return type doesn't match overridden member - intentional for workflow control
     protected override async ValueTask<AIAgent?> SelectNextAgentAsync(
         IReadOnlyList<ChatMessage> conversationHistory,
         CancellationToken cancellationToken = default)
@@ -99,7 +100,7 @@ public class ManagerGroupChatManager : GroupChatManager
             
             // Find and return the selected agent
             AIAgent? selectedAgent = _agents.FirstOrDefault(a => 
-                a.Name.Equals(decision.NextAgent, StringComparison.OrdinalIgnoreCase));
+                a.Name?.Equals(decision.NextAgent, StringComparison.OrdinalIgnoreCase) == true);
             
             if (selectedAgent == null)
             {
@@ -117,6 +118,7 @@ public class ManagerGroupChatManager : GroupChatManager
             return _agents.FirstOrDefault();
         }
     }
+#pragma warning restore CS8609
 
     /// <summary>
     /// Formats the conversation history for the Manager to analyze.

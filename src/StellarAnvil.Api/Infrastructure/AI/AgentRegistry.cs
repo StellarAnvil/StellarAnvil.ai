@@ -1,19 +1,11 @@
-using StellarAnvil.Api.Models.Task;
+using StellarAnvil.Api.Domain.Interfaces;
 
-namespace StellarAnvil.Api.Services;
+namespace StellarAnvil.Api.Infrastructure.AI;
 
 public class AgentRegistry : IAgentRegistry
 {
     private readonly Dictionary<string, string> _prompts = new();
     private readonly ILogger<AgentRegistry> _logger;
-    
-    // Phase to agent mapping
-    private static readonly Dictionary<TaskPhase, (string Junior, string Senior)> PhaseAgents = new()
-    {
-        [TaskPhase.BA] = ("business-analyst", "sr-business-analyst"),
-        [TaskPhase.Dev] = ("developer", "sr-developer"),
-        [TaskPhase.QA] = ("quality-assurance", "sr-quality-assurance")
-    };
     
     public AgentRegistry(IWebHostEnvironment environment, ILogger<AgentRegistry> logger)
     {
@@ -58,21 +50,6 @@ public class AgentRegistry : IAgentRegistry
         
         _logger.LogWarning("Prompt not found for agent: {AgentName}, using default", agentName);
         return _prompts.GetValueOrDefault("default", "You are a helpful assistant.");
-    }
-    
-    public string GetJuniorAgent(TaskPhase phase)
-    {
-        return PhaseAgents[phase].Junior;
-    }
-    
-    public string GetSeniorAgent(TaskPhase phase)
-    {
-        return PhaseAgents[phase].Senior;
-    }
-    
-    public IEnumerable<string> GetAllAgents()
-    {
-        return _prompts.Keys;
     }
 }
 

@@ -1,6 +1,6 @@
-using StellarAnvil.Api.Models.OpenAI;
+using StellarAnvil.Api.Application.DTOs;
 
-namespace StellarAnvil.Api.Services;
+namespace StellarAnvil.Api.Application.UseCases;
 
 public interface IAgentOrchestrator
 {

@@ -1,8 +1,8 @@
-using StellarAnvil.Api.Models.Task;
+using StellarAnvil.Api.Domain.Entities;
 
-namespace StellarAnvil.Api.Services;
+namespace StellarAnvil.Api.Domain.Interfaces;
 
-public interface ITaskStore
+public interface ITaskRepository
 {
     /// <summary>
     /// Creates a new task and returns it with a generated TaskId
@@ -18,10 +18,5 @@ public interface ITaskStore
     /// Updates an existing task
     /// </summary>
     Task UpdateTaskAsync(AgentTask task);
-    
-    /// <summary>
-    /// Checks if a task exists
-    /// </summary>
-    Task<bool> ExistsAsync(string taskId);
 }
 
