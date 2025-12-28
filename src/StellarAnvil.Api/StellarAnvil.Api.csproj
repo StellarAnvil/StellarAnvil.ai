@@ -4,10 +4,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>d60bf77a-18c4-4928-b242-0a1c310c554b</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="*-*" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.11.9" />
   </ItemGroup>
 

@@ -1,17 +1,26 @@
-using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Scalar.AspNetCore;
+using StellarAnvil.Api.Models.OpenAI;
+using StellarAnvil.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure Kestrel for HTTP/2 support
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ConfigureEndpointDefaults(listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http1AndHttp2AndHttp3;
+    });
+});
+
 // Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-// Register HttpClient for Ollama proxy
-builder.Services.AddHttpClient("Ollama", client =>
-{
-    client.BaseAddress = new Uri(builder.Configuration["Ollama:BaseUrl"]!);
-});
+// Register OpenAI Agent Service
+builder.Services.AddSingleton<IOpenAIAgentService, OpenAIAgentService>();
 
 var app = builder.Build();
 
@@ -24,60 +33,45 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
+// GET /v1/models - return hardcoded model list
+app.MapGet("/v1/models", () =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
-// GET /v1/models - proxy to Ollama
-app.MapGet("/v1/models", async (IHttpClientFactory factory) =>
-{
-    var client = factory.CreateClient("Ollama");
-    var response = await client.GetStringAsync("/v1/models");
-    return Results.Content(response, "application/json");
+    var response = new ModelsResponse
+    {
+        Data =
+        [
+            new ModelInfo { Id = "gpt-5-nano" }
+        ]
+    };
+    return Results.Ok(response);
 })
 .WithName("ListModels");
 
-// POST /v1/chat/completions - proxy to Ollama with streaming support
-app.MapPost("/v1/chat/completions", async (HttpContext context, IHttpClientFactory factory) =>
+// POST /v1/chat/completions - SSE streaming only via Microsoft Agent Framework
+app.MapPost("/v1/chat/completions", (
+    ChatCompletionRequest request,
+    IOpenAIAgentService agentService,
+    CancellationToken cancellationToken) =>
 {
-    var client = factory.CreateClient("Ollama");
-
-    // Forward request to Ollama
-    var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
+    if (request.Stream != true)
     {
-        Content = new StreamContent(context.Request.Body)
-    };
-    request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return Results.BadRequest(new { error = "Only streaming requests are supported. Set stream: true" });
+    }
 
-    var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-
-    // Copy response headers
-    context.Response.StatusCode = (int)response.StatusCode;
-    context.Response.ContentType = response.Content.Headers.ContentType?.ToString() ?? "application/json";
-
-    // Stream response body directly
-    await response.Content.CopyToAsync(context.Response.Body);
+    return TypedResults.ServerSentEvents(
+        StreamChatCompletionAsync(request, agentService, cancellationToken));
 })
 .WithName("CreateChatCompletion");
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+static async IAsyncEnumerable<ChatCompletionChunk> StreamChatCompletionAsync(
+    ChatCompletionRequest request,
+    IOpenAIAgentService agentService,
+    [EnumeratorCancellation] CancellationToken cancellationToken)
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    await foreach (var chunk in agentService.StreamAsync(request, cancellationToken))
+    {
+        yield return chunk;
+    }
 }
