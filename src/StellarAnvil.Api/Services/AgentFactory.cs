@@ -10,6 +10,11 @@ public interface IAgentFactory
     /// Creates a ChatClientAgent for the specified agent name using its system prompt
     /// </summary>
     ChatClientAgent CreateAgent(string agentName);
+    
+    /// <summary>
+    /// Creates a ChatClientAgent for the specified agent name with tools support
+    /// </summary>
+    ChatClientAgent CreateAgent(string agentName, IList<AITool>? tools);
 }
 
 public class AgentFactory : IAgentFactory
@@ -34,14 +39,42 @@ public class AgentFactory : IAgentFactory
 
     public ChatClientAgent CreateAgent(string agentName)
     {
+        return CreateAgent(agentName, tools: null);
+    }
+    
+    public ChatClientAgent CreateAgent(string agentName, IList<AITool>? tools)
+    {
         var systemPrompt = _agentRegistry.GetSystemPrompt(agentName);
         
+        // If tools are provided, wrap the chat client to include them in every request
+        var chatClient = tools != null && tools.Count > 0
+            ? CreateChatClientWithTools(tools)
+            : _chatClient;
+        
         return new ChatClientAgent(
-            _chatClient,
+            chatClient,
             systemPrompt,
             agentName,
             $"{agentName} agent"
         );
+    }
+    
+    /// <summary>
+    /// Creates a wrapped IChatClient that includes the specified tools in every chat completion request
+    /// </summary>
+    private IChatClient CreateChatClientWithTools(IList<AITool> tools)
+    {
+        // Use ConfigureOptions to add tools to every chat completion call
+        return new ChatClientBuilder(_chatClient)
+            .ConfigureOptions(options =>
+            {
+                options.Tools ??= [];
+                foreach (var tool in tools)
+                {
+                    options.Tools.Add(tool);
+                }
+            })
+            .Build();
     }
 }
 

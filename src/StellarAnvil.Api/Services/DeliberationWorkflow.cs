@@ -1,4 +1,5 @@
 using Microsoft.Agents.AI.Workflows;
+using Microsoft.Extensions.AI;
 using StellarAnvil.Api.Models.Task;
 
 namespace StellarAnvil.Api.Services;
@@ -10,6 +11,11 @@ public interface IDeliberationWorkflow
     /// with Junior and Senior agents in round-robin conversation
     /// </summary>
     Workflow BuildForPhase(TaskPhase phase);
+    
+    /// <summary>
+    /// Builds a GroupChat workflow for the specified phase with tools support
+    /// </summary>
+    Workflow BuildForPhase(TaskPhase phase, IList<AITool>? tools);
 }
 
 public class DeliberationWorkflow : IDeliberationWorkflow
@@ -32,15 +38,20 @@ public class DeliberationWorkflow : IDeliberationWorkflow
 
     public Workflow BuildForPhase(TaskPhase phase)
     {
+        return BuildForPhase(phase, tools: null);
+    }
+    
+    public Workflow BuildForPhase(TaskPhase phase, IList<AITool>? tools)
+    {
         var juniorAgentName = _agentRegistry.GetJuniorAgent(phase);
         var seniorAgentName = _agentRegistry.GetSeniorAgent(phase);
         
         _logger.LogInformation(
-            "Building deliberation workflow for {Phase} phase: {Junior} <-> {Senior}",
-            phase, juniorAgentName, seniorAgentName);
+            "Building deliberation workflow for {Phase} phase: {Junior} <-> {Senior} with {ToolCount} tools",
+            phase, juniorAgentName, seniorAgentName, tools?.Count ?? 0);
         
-        var juniorAgent = _agentFactory.CreateAgent(juniorAgentName);
-        var seniorAgent = _agentFactory.CreateAgent(seniorAgentName);
+        var juniorAgent = _agentFactory.CreateAgent(juniorAgentName, tools);
+        var seniorAgent = _agentFactory.CreateAgent(seniorAgentName, tools);
         
         // Build group chat with round-robin speaker selection
         // Junior speaks first, then Senior reviews, alternating up to MaxIterations

@@ -50,6 +50,9 @@ public class AgentOrchestrator : IAgentOrchestrator
                 task.UserMessages.Add(userMessage);
             }
             
+            // Store tools from the request for agent function calling
+            task.Tools = request.Tools;
+            
             // Start with BA phase
             task.State = TaskState.BA_Working;
             task.CurrentPhase = TaskPhase.BA;
@@ -67,6 +70,12 @@ public class AgentOrchestrator : IAgentOrchestrator
             if (userMessage != null)
             {
                 task.UserMessages.Add(userMessage);
+            }
+            
+            // Update tools if provided in continuation request
+            if (request.Tools != null)
+            {
+                task.Tools = request.Tools;
             }
             
             // Handle user response based on current state
@@ -179,8 +188,11 @@ public class AgentOrchestrator : IAgentOrchestrator
         
         _logger.LogInformation("Task {TaskId}: Running {Phase} phase deliberation", task.TaskId, task.CurrentPhase);
         
-        // Build the GroupChat workflow for this phase
-        var workflow = _deliberationWorkflow.BuildForPhase(task.CurrentPhase);
+        // Convert OpenAI tools to Microsoft.Extensions.AI AITools for agent use
+        var aiTools = ToolConverter.ConvertToAITools(task.Tools);
+        
+        // Build the GroupChat workflow for this phase with tools support
+        var workflow = _deliberationWorkflow.BuildForPhase(task.CurrentPhase, aiTools);
         
         // Convert user messages to Microsoft.Extensions.AI format
         var inputMessages = task.UserMessages

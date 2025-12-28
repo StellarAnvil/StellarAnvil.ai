@@ -25,6 +25,11 @@ public class AgentTask
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     
     /// <summary>
+    /// Tools available to agents for function calling (e.g., file read, codebase search)
+    /// </summary>
+    public List<Tool>? Tools { get; set; }
+    
+    /// <summary>
     /// Resets deliberation count when moving to a new phase
     /// </summary>
     public void ResetDeliberationForNewPhase()
