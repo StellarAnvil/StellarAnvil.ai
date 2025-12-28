@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Scalar.AspNetCore;
 using StellarAnvil.Api.Models.OpenAI;
@@ -19,8 +18,20 @@ builder.WebHost.ConfigureKestrel(options =>
 // Add services to the container.
 builder.Services.AddOpenApi();
 
-// Register OpenAI Agent Service
-builder.Services.AddSingleton<IOpenAIAgentService, OpenAIAgentService>();
+// Register Task Store (in-memory for now, can be swapped to database later)
+builder.Services.AddSingleton<ITaskStore, InMemoryTaskStore>();
+
+// Register Agent Registry (loads system prompts from SystemPrompts folder)
+builder.Services.AddSingleton<IAgentRegistry, AgentRegistry>();
+
+// Register Agent Factory (creates ChatClientAgent instances for Agent Framework)
+builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
+
+// Register Deliberation Workflow (builds GroupChat workflows using Agent Framework)
+builder.Services.AddSingleton<IDeliberationWorkflow, DeliberationWorkflow>();
+
+// Register Agent Orchestrator (coordinates multi-agent workflow)
+builder.Services.AddScoped<IAgentOrchestrator, AgentOrchestrator>();
 
 var app = builder.Build();
 
@@ -47,10 +58,10 @@ app.MapGet("/v1/models", () =>
 })
 .WithName("ListModels");
 
-// POST /v1/chat/completions - SSE streaming only via Microsoft Agent Framework
+// POST /v1/chat/completions - Multi-agent orchestration with SSE streaming
 app.MapPost("/v1/chat/completions", (
     ChatCompletionRequest request,
-    IOpenAIAgentService agentService,
+    IAgentOrchestrator orchestrator,
     CancellationToken cancellationToken) =>
 {
     if (request.Stream != true)
@@ -59,7 +70,7 @@ app.MapPost("/v1/chat/completions", (
     }
 
     return TypedResults.ServerSentEvents(
-        StreamChatCompletionAsync(request, agentService, cancellationToken));
+        StreamChatCompletionAsync(request, orchestrator, cancellationToken));
 })
 .WithName("CreateChatCompletion");
 
@@ -67,10 +78,10 @@ app.Run();
 
 static async IAsyncEnumerable<ChatCompletionChunk> StreamChatCompletionAsync(
     ChatCompletionRequest request,
-    IOpenAIAgentService agentService,
+    IAgentOrchestrator orchestrator,
     [EnumeratorCancellation] CancellationToken cancellationToken)
 {
-    await foreach (var chunk in agentService.StreamAsync(request, cancellationToken))
+    await foreach (var chunk in orchestrator.ProcessAsync(request, cancellationToken))
     {
         yield return chunk;
     }

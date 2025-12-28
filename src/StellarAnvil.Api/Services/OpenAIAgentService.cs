@@ -30,17 +30,51 @@ public class OpenAIAgentService : IOpenAIAgentService
     {
         var messages = ConvertMessages(request.Messages);
         var options = CreateChatOptions(request);
+        
+        await foreach (var chunk in StreamCoreAsync(messages, options, request.Model ?? _model, cancellationToken))
+        {
+            yield return chunk;
+        }
+    }
+
+    public async IAsyncEnumerable<ChatCompletionChunk> StreamWithSystemPromptAsync(
+        ChatCompletionRequest request,
+        string systemPrompt,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Inject system prompt at the beginning
+        var messagesWithSystem = new List<ChatMessage>
+        {
+            new() { Role = "system", Content = systemPrompt }
+        };
+        messagesWithSystem.AddRange(request.Messages);
+        
+        var messages = ConvertMessages(messagesWithSystem);
+        var options = CreateChatOptions(request);
+        
+        await foreach (var chunk in StreamCoreAsync(messages, options, request.Model ?? _model, cancellationToken))
+        {
+            yield return chunk;
+        }
+    }
+
+    private async IAsyncEnumerable<ChatCompletionChunk> StreamCoreAsync(
+        List<OpenAI.Chat.ChatMessage> messages,
+        ChatCompletionOptions options,
+        string model,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
 
         var completionId = $"chatcmpl-{Guid.NewGuid():N}";
         var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-        await foreach (var update in _chatClient.CompleteChatStreamingAsync(messages, options, cancellationToken))
+        await foreach (var update in _chatClient.CompleteChatStreamingAsync(messages, options, cancellationToken).WithCancellation(cancellationToken))
         {
             var chunk = new ChatCompletionChunk
             {
                 Id = completionId,
                 Created = created,
-                Model = request.Model ?? _model,
+                Model = model,
                 Choices = update.ContentUpdate.Select((content, index) => new ChunkChoice
                 {
                     Index = index,
