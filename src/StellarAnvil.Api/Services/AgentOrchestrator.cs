@@ -88,15 +88,14 @@ public class AgentOrchestrator : IAgentOrchestrator
         // 4. Save the task state
         await _taskStore.UpdateTaskAsync(task);
         
-        // 5. Stream the final response to the user with task ID appended
-        var responseWithTaskId = TaskIdHelper.AppendTaskId(responseForUser, task.TaskId);
-        
-        await foreach (var chunk in StreamResponseAsync(responseWithTaskId, request.Model ?? "gpt-5-nano", cancellationToken))
+        // 5. Stream the response content, then append task ID as final chunk
+        await foreach (var chunk in StreamResponseWithTaskIdAsync(responseForUser, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
         {
             yield return chunk;
         }
         
-        // Store the assistant response in user messages
+        // Store the assistant response with task ID in user messages
+        var responseWithTaskId = TaskIdHelper.AppendTaskId(responseForUser, task.TaskId);
         task.UserMessages.Add(new ChatMessage
         {
             Role = "assistant",
@@ -194,25 +193,48 @@ public class AgentOrchestrator : IAgentOrchestrator
         var run = await InProcessExecution.StreamAsync(workflow, inputMessages);
         await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
         
-        // Collect all agent responses from the conversation
-        var conversationBuilder = new StringBuilder();
+        // Collect agent responses - accumulate streaming tokens per agent
         var agentResponses = new List<(string Agent, string Response)>();
+        string? currentAgent = null;
+        var currentResponseBuilder = new StringBuilder();
         
         await foreach (var evt in run.WatchStreamAsync().WithCancellation(cancellationToken))
         {
             if (evt is AgentRunUpdateEvent update)
             {
                 var response = update.AsResponse();
+                
+                // If agent changed, save previous agent's accumulated response
+                if (currentAgent != null && currentAgent != update.ExecutorId)
+                {
+                    var accumulatedResponse = currentResponseBuilder.ToString().Trim();
+                    if (!string.IsNullOrEmpty(accumulatedResponse))
+                    {
+                        agentResponses.Add((currentAgent, accumulatedResponse));
+                        _logger.LogDebug("Task {TaskId}: [{Agent}] completed response", task.TaskId, currentAgent);
+                    }
+                    currentResponseBuilder.Clear();
+                }
+                
+                currentAgent = update.ExecutorId;
+                
+                // Accumulate streaming tokens
                 foreach (var message in response.Messages)
                 {
-                    agentResponses.Add((update.ExecutorId, message.Text ?? ""));
-                    _logger.LogDebug("Task {TaskId}: [{Agent}] {Response}", 
-                        task.TaskId, update.ExecutorId, message.Text?[..Math.Min(100, message.Text?.Length ?? 0)]);
+                    currentResponseBuilder.Append(message.Text ?? "");
                 }
             }
             else if (evt is WorkflowOutputEvent)
             {
-                // Workflow completed
+                // Save final agent's response before workflow completes
+                if (currentAgent != null)
+                {
+                    var accumulatedResponse = currentResponseBuilder.ToString().Trim();
+                    if (!string.IsNullOrEmpty(accumulatedResponse))
+                    {
+                        agentResponses.Add((currentAgent, accumulatedResponse));
+                    }
+                }
                 break;
             }
         }
@@ -237,7 +259,9 @@ public class AgentOrchestrator : IAgentOrchestrator
         
         foreach (var (agent, response) in responses)
         {
-            sb.AppendLine($"### {agent}");
+            // Clean up agent name - remove hash suffix and format nicely
+            var cleanAgentName = CleanAgentName(agent);
+            sb.AppendLine($"### {cleanAgentName}");
             sb.AppendLine(response);
             sb.AppendLine();
         }
@@ -248,14 +272,41 @@ public class AgentOrchestrator : IAgentOrchestrator
         return sb.ToString();
     }
 
-    private static async IAsyncEnumerable<ChatCompletionChunk> StreamResponseAsync(
+    private static string CleanAgentName(string agentId)
+    {
+        // Agent IDs come as "business_analyst_f242e03183c849..." or "sr_business_analyst_..."
+        // Extract just the meaningful part and format it nicely
+        
+        // Remove any hash suffix (32 char hex at end)
+        var name = agentId;
+        if (name.Length > 32)
+        {
+            var lastUnderscore = name.LastIndexOf('_');
+            if (lastUnderscore > 0 && name.Length - lastUnderscore - 1 == 32)
+            {
+                name = name[..lastUnderscore];
+            }
+        }
+        
+        // Convert underscores to spaces and title case
+        return string.Join(" ", name.Split('_')
+            .Select(word => char.ToUpper(word[0]) + word[1..].ToLower()));
+    }
+
+    /// <summary>
+    /// Streams content first, then sends task ID marker as the final chunk.
+    /// This ensures task ID appears once at the end, not scattered throughout.
+    /// </summary>
+    private static async IAsyncEnumerable<ChatCompletionChunk> StreamResponseWithTaskIdAsync(
         string content,
+        string taskId,
         string model,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         var completionId = $"chatcmpl-{Guid.NewGuid():N}";
         var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         
+        // Stream the main content
         const int chunkSize = 10;
         for (var i = 0; i < content.Length; i += chunkSize)
         {
@@ -285,6 +336,28 @@ public class AgentOrchestrator : IAgentOrchestrator
             await Task.Delay(5, cancellationToken);
         }
         
+        // Send task ID marker as a single final content chunk (before finish)
+        var taskIdMarker = $"\n\n<!-- task:{taskId} -->";
+        yield return new ChatCompletionChunk
+        {
+            Id = completionId,
+            Created = created,
+            Model = model,
+            Choices =
+            [
+                new ChunkChoice
+                {
+                    Index = 0,
+                    Delta = new ChatMessageDelta
+                    {
+                        Content = taskIdMarker
+                    },
+                    FinishReason = null
+                }
+            ]
+        };
+        
+        // Final chunk with finish reason
         yield return new ChatCompletionChunk
         {
             Id = completionId,
