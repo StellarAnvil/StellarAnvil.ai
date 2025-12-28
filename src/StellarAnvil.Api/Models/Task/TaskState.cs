@@ -5,6 +5,11 @@ public enum TaskState
     // Initial
     Created,
     
+    // Manager-controlled workflow states (simplified)
+    Working,        // Manager is orchestrating agents
+    AwaitingUser,   // Waiting for user approval/feedback
+    
+    // Legacy phase-specific states (kept for backwards compatibility)
     // BA Phase
     BA_Working,
     SrBA_Reviewing,

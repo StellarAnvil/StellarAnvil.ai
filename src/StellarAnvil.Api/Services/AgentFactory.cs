@@ -15,11 +15,18 @@ public interface IAgentFactory
     /// Creates a ChatClientAgent for the specified agent name with tools support
     /// </summary>
     ChatClientAgent CreateAgent(string agentName, IList<AITool>? tools);
+    
+    /// <summary>
+    /// Creates a lightweight IChatClient for the Manager agent (workflow orchestration).
+    /// Uses a fast model for quick speaker selection decisions.
+    /// </summary>
+    IChatClient CreateManagerChatClient();
 }
 
 public class AgentFactory : IAgentFactory
 {
     private readonly IChatClient _chatClient;
+    private readonly IChatClient _managerChatClient;
     private readonly IAgentRegistry _agentRegistry;
 
     public AgentFactory(IConfiguration configuration, IAgentRegistry agentRegistry)
@@ -30,10 +37,18 @@ public class AgentFactory : IAgentFactory
             ?? throw new InvalidOperationException("AI:OpenAI:ApiKey configuration is required");
         
         var model = configuration["AI:OpenAI:Model"] ?? "gpt-4o-mini";
+        var managerModel = configuration["AI:OpenAI:ManagerModel"] ?? "gpt-4o-mini";
+        
+        var openAiClient = new OpenAIClient(apiKey);
         
         // Create OpenAI client and convert to IChatClient for Agent Framework
-        _chatClient = new OpenAIClient(apiKey)
+        _chatClient = openAiClient
             .GetChatClient(model)
+            .AsIChatClient();
+        
+        // Create a lightweight chat client for Manager (fast model for quick decisions)
+        _managerChatClient = openAiClient
+            .GetChatClient(managerModel)
             .AsIChatClient();
     }
 
@@ -75,6 +90,15 @@ public class AgentFactory : IAgentFactory
                 }
             })
             .Build();
+    }
+    
+    /// <summary>
+    /// Creates a lightweight IChatClient for the Manager agent.
+    /// Used for quick speaker selection decisions in the workflow.
+    /// </summary>
+    public IChatClient CreateManagerChatClient()
+    {
+        return _managerChatClient;
     }
 }
 

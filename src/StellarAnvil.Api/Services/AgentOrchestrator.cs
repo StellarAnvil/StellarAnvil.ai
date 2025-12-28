@@ -14,18 +14,15 @@ public class AgentOrchestrator : IAgentOrchestrator
 {
     private readonly IDeliberationWorkflow _deliberationWorkflow;
     private readonly ITaskStore _taskStore;
-    private readonly IAgentRegistry _agentRegistry;
     private readonly ILogger<AgentOrchestrator> _logger;
 
     public AgentOrchestrator(
         IDeliberationWorkflow deliberationWorkflow,
         ITaskStore taskStore,
-        IAgentRegistry agentRegistry,
         ILogger<AgentOrchestrator> logger)
     {
         _deliberationWorkflow = deliberationWorkflow;
         _taskStore = taskStore;
-        _agentRegistry = agentRegistry;
         _logger = logger;
     }
 
@@ -53,10 +50,8 @@ public class AgentOrchestrator : IAgentOrchestrator
             // Store tools from the request for agent function calling
             task.Tools = request.Tools;
             
-            // Start with BA phase
-            task.State = TaskState.BA_Working;
-            task.CurrentPhase = TaskPhase.BA;
-            task.CurrentAgent = _agentRegistry.GetJuniorAgent(TaskPhase.BA);
+            // Manager will decide the starting phase dynamically
+            task.State = TaskState.Working;
         }
         else
         {
@@ -78,21 +73,15 @@ public class AgentOrchestrator : IAgentOrchestrator
                 task.Tools = request.Tools;
             }
             
-            // Handle user response based on current state
-            task = HandleUserResponse(task);
+            // Manager will handle user response (approval/feedback) - no manual handling needed
+            task.State = TaskState.Working;
         }
         
-        // 2. Run the deliberation using Microsoft Agent Framework GroupChat
-        var responseForUser = await RunDeliberationAsync(task, cancellationToken);
+        // 2. Run the Manager-controlled deliberation
+        var (responseForUser, isComplete) = await RunManagerDeliberationAsync(task, cancellationToken);
         
-        // 3. Update state to awaiting user
-        task.State = task.CurrentPhase switch
-        {
-            TaskPhase.BA => TaskState.AwaitingUser_BA,
-            TaskPhase.Dev => TaskState.AwaitingUser_Dev,
-            TaskPhase.QA => TaskState.AwaitingUser_QA,
-            _ => task.State
-        };
+        // 3. Update state based on Manager's decision
+        task.State = isComplete ? TaskState.Completed : TaskState.AwaitingUser;
         
         // 4. Save the task state
         await _taskStore.UpdateTaskAsync(task);
@@ -113,86 +102,27 @@ public class AgentOrchestrator : IAgentOrchestrator
         await _taskStore.UpdateTaskAsync(task);
     }
 
-    private AgentTask HandleUserResponse(AgentTask task)
-    {
-        var lastUserMessage = task.UserMessages.LastOrDefault(m => m.Role.Equals("user", StringComparison.OrdinalIgnoreCase));
-        var userContent = lastUserMessage?.Content?.ToLowerInvariant() ?? "";
-        
-        var isApproval = userContent.Contains("approve") || 
-                         userContent.Contains("lgtm") || 
-                         userContent.Contains("looks good") ||
-                         userContent.Contains("proceed") ||
-                         userContent.Contains("yes") ||
-                         userContent.Contains("continue");
-        
-        if (isApproval && task.State.ToString().StartsWith("AwaitingUser"))
-        {
-            task = MoveToNextPhase(task);
-        }
-        else if (task.State.ToString().StartsWith("AwaitingUser"))
-        {
-            // User gave feedback, restart deliberation in current phase
-            task.State = task.CurrentPhase switch
-            {
-                TaskPhase.BA => TaskState.BA_Working,
-                TaskPhase.Dev => TaskState.Dev_Working,
-                TaskPhase.QA => TaskState.QA_Working,
-                _ => task.State
-            };
-            task.CurrentAgent = _agentRegistry.GetJuniorAgent(task.CurrentPhase);
-            task.ResetDeliberationForNewPhase();
-        }
-        
-        return task;
-    }
-
-    private AgentTask MoveToNextPhase(AgentTask task)
-    {
-        switch (task.CurrentPhase)
-        {
-            case TaskPhase.BA:
-                task.CurrentPhase = TaskPhase.Dev;
-                task.State = TaskState.Dev_Working;
-                task.CurrentAgent = _agentRegistry.GetJuniorAgent(TaskPhase.Dev);
-                task.ResetDeliberationForNewPhase();
-                _logger.LogInformation("Task {TaskId} moving from BA to Dev phase", task.TaskId);
-                break;
-                
-            case TaskPhase.Dev:
-                task.CurrentPhase = TaskPhase.QA;
-                task.State = TaskState.QA_Working;
-                task.CurrentAgent = _agentRegistry.GetJuniorAgent(TaskPhase.QA);
-                task.ResetDeliberationForNewPhase();
-                _logger.LogInformation("Task {TaskId} moving from Dev to QA phase", task.TaskId);
-                break;
-                
-            case TaskPhase.QA:
-                task.State = TaskState.Completed;
-                _logger.LogInformation("Task {TaskId} completed", task.TaskId);
-                break;
-        }
-        
-        return task;
-    }
-
     /// <summary>
-    /// Runs the deliberation using Microsoft Agent Framework GroupChat workflow.
-    /// The framework handles the Jr ↔ Sr round-robin conversation automatically.
+    /// Runs the Manager-controlled GroupChat workflow.
+    /// The Manager Agent decides which agents speak and handles phase transitions.
+    /// Returns the formatted response and whether the workflow is complete.
     /// </summary>
-    private async Task<string> RunDeliberationAsync(AgentTask task, CancellationToken cancellationToken)
+    private async Task<(string Response, bool IsComplete)> RunManagerDeliberationAsync(
+        AgentTask task, 
+        CancellationToken cancellationToken)
     {
         if (task.State == TaskState.Completed)
         {
-            return "Task has been completed successfully! All phases (BA, Dev, QA) have been approved.";
+            return ("Task has been completed successfully! All work has been approved.", true);
         }
         
-        _logger.LogInformation("Task {TaskId}: Running {Phase} phase deliberation", task.TaskId, task.CurrentPhase);
+        _logger.LogInformation("Task {TaskId}: Running Manager-controlled deliberation", task.TaskId);
         
         // Convert OpenAI tools to Microsoft.Extensions.AI AITools for agent use
         var aiTools = ToolConverter.ConvertToAITools(task.Tools);
         
-        // Build the GroupChat workflow for this phase with tools support
-        var workflow = _deliberationWorkflow.BuildForPhase(task.CurrentPhase, aiTools);
+        // Build the Manager-controlled GroupChat workflow with all agents
+        var (workflow, manager) = _deliberationWorkflow.Build(aiTools);
         
         // Convert user messages to Microsoft.Extensions.AI format
         var inputMessages = task.UserMessages
@@ -251,23 +181,22 @@ public class AgentOrchestrator : IAgentOrchestrator
             }
         }
         
+        // Check if Manager signals completion
+        var isComplete = manager.IsComplete;
+        
+        _logger.LogInformation(
+            "Task {TaskId}: Deliberation complete. IsComplete={IsComplete}, IsAwaitingUser={IsAwaitingUser}, Reason={Reason}",
+            task.TaskId, manager.IsComplete, manager.IsAwaitingUser, manager.LastReasoning);
+        
         // Format the final response for the user
-        return FormatDeliberationOutput(task.CurrentPhase, agentResponses);
+        var formattedResponse = FormatDeliberationOutput(agentResponses, isComplete);
+        
+        return (formattedResponse, isComplete);
     }
 
-    private static string FormatDeliberationOutput(TaskPhase phase, List<(string Agent, string Response)> responses)
+    private static string FormatDeliberationOutput(List<(string Agent, string Response)> responses, bool isComplete)
     {
-        var phaseLabel = phase switch
-        {
-            TaskPhase.BA => "Business Analysis",
-            TaskPhase.Dev => "Development",
-            TaskPhase.QA => "Quality Assurance",
-            _ => phase.ToString()
-        };
-        
         var sb = new StringBuilder();
-        sb.AppendLine($"## {phaseLabel} Phase");
-        sb.AppendLine();
         
         foreach (var (agent, response) in responses)
         {
@@ -279,7 +208,15 @@ public class AgentOrchestrator : IAgentOrchestrator
         }
         
         sb.AppendLine("---");
-        sb.AppendLine("*Reply with **approve** to proceed to the next phase, or provide feedback for revisions.*");
+        
+        if (isComplete)
+        {
+            sb.AppendLine("**Task Complete!** All work has been reviewed and approved.");
+        }
+        else
+        {
+            sb.AppendLine("*Reply with **approve** to proceed to the next phase, or provide feedback for revisions.*");
+        }
         
         return sb.ToString();
     }
@@ -300,9 +237,10 @@ public class AgentOrchestrator : IAgentOrchestrator
             }
         }
         
-        // Convert underscores to spaces and title case
-        return string.Join(" ", name.Split('_')
-            .Select(word => char.ToUpper(word[0]) + word[1..].ToLower()));
+        // Convert underscores/hyphens to spaces and title case
+        return string.Join(" ", name.Replace('-', '_').Split('_')
+            .Where(word => word.Length > 0)
+            .Select(word => char.ToUpper(word[0]) + (word.Length > 1 ? word[1..].ToLower() : "")));
     }
 
     /// <summary>
