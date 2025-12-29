@@ -23,4 +23,3 @@ public record ModelInfo
     public string OwnedBy { get; init; } = "openai";
 }
 
-

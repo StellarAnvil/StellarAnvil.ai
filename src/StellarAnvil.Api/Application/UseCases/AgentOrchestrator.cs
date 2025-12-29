@@ -1,14 +1,14 @@
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using Microsoft.Agents.AI.Workflows;
-using Microsoft.Extensions.AI;
 using StellarAnvil.Api.Application.DTOs;
+using StellarAnvil.Api.Application.Formatters;
+using StellarAnvil.Api.Application.Helpers;
+using StellarAnvil.Api.Application.Mappers;
 using StellarAnvil.Api.Application.Results;
+using StellarAnvil.Api.Application.Streaming;
 using StellarAnvil.Api.Domain.Entities;
 using StellarAnvil.Api.Domain.Interfaces;
-using StellarAnvil.Api.Infrastructure.Helpers;
-using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using ChatMessage = StellarAnvil.Api.Application.DTOs.ChatMessage;
 
 namespace StellarAnvil.Api.Application.UseCases;
@@ -120,23 +120,24 @@ public class AgentOrchestrator : IAgentOrchestrator
             
             // Store pending tool calls for validation on next request
             task.PendingToolCalls = deliberationResult.ToolCalls
-                .Select(tc => new PendingToolCall(tc.Id, tc.Function.Name, tc.Function.Arguments))
+                .Select(tc => new PendingToolCall(tc.CallId, tc.FunctionName, tc.Arguments))
                 .ToList();
             task.LastActiveAgent = deliberationResult.ToolCallAgent;
             task.State = TaskState.AwaitingToolResult;
             
-            // Store the assistant message with tool calls
+            // Store the assistant message with tool calls (convert to DTOs for storage)
             task.UserMessages.Add(new ChatMessage
             {
                 Role = "assistant",
                 Content = null,
-                ToolCalls = deliberationResult.ToolCalls
+                ToolCalls = OpenAiStreamWriter.ToToolCallDtos(deliberationResult.ToolCalls)
             });
             
             await _taskRepository.UpdateTaskAsync(task);
             
             // Stream tool calls to client and stop immediately
-            await foreach (var chunk in StreamToolCallsAsync(deliberationResult.ToolCalls, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
+            await foreach (var chunk in OpenAiStreamWriter.StreamToolCallsAsync(
+                deliberationResult.ToolCalls, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
             {
                 yield return chunk;
             }
@@ -148,7 +149,8 @@ public class AgentOrchestrator : IAgentOrchestrator
             await _taskRepository.UpdateTaskAsync(task);
             
             // Stream the response content, then append task ID as final chunk
-            await foreach (var chunk in StreamResponseWithTaskIdAsync(deliberationResult.Response, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
+            await foreach (var chunk in OpenAiStreamWriter.StreamResponseWithTaskIdAsync(
+                deliberationResult.Response, task.TaskId, request.Model ?? "gpt-5-nano", cancellationToken))
             {
                 yield return chunk;
             }
@@ -187,7 +189,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         var workflowResult = _deliberationWorkflow.Build(aiTools);
         
         // Convert user messages to Microsoft.Extensions.AI format (including tool results)
-        var inputMessages = ConvertToAIMessages(task.UserMessages);
+        var inputMessages = AiMessageMapper.ConvertToAIMessages(task.UserMessages);
         
         // DEBUG: Log the messages being sent to the workflow
         _logger.LogInformation("Task {TaskId}: Sending {Count} messages to workflow:", task.TaskId, inputMessages.Count);
@@ -221,7 +223,7 @@ public class AgentOrchestrator : IAgentOrchestrator
                         task.TaskId, update.ExecutorId, response.Messages.Count);
                     
                     // Check for tool/function calls in the response - if found, stop and return to client
-                    var toolCalls = ExtractToolCalls(response.Messages);
+                    var toolCalls = ToolCallExtractor.ExtractToolCalls(response.Messages);
                     if (toolCalls.Count > 0)
                     {
                         _logger.LogInformation("Task {TaskId}: Agent {Agent} requested {Count} tool calls",
@@ -315,151 +317,6 @@ public class AgentOrchestrator : IAgentOrchestrator
         
         return DeliberationResult.TextResponse(formattedResponse, isComplete);
     }
-    
-    /// <summary>
-    /// Formats agent name for display (e.g., "business-analyst" -> "Business Analyst")
-    /// </summary>
-    private static string FormatAgentNameForDisplay(string agentName)
-    {
-        return string.Join(" ", agentName.Replace('-', ' ').Replace('_', ' ').Split(' ')
-            .Where(word => word.Length > 0)
-            .Select(word => char.ToUpper(word[0]) + (word.Length > 1 ? word[1..].ToLower() : "")));
-    }
-    
-    /// <summary>
-    /// Extracts the base agent name from a full agent ID.
-    /// Agent IDs come as "business_analyst_abc123..." - we need just "business-analyst".
-    /// </summary>
-    private static string ExtractBaseAgentName(string agentId)
-    {
-        // Known agent names (with hyphens)
-        string[] agentNames = { "business-analyst", "sr-business-analyst", "developer", "sr-developer", "quality-assurance", "sr-quality-assurance" };
-        
-        // Check if it's already a base name
-        if (agentNames.Contains(agentId))
-        {
-            return agentId;
-        }
-        
-        // Try to match against known patterns (underscore version)
-        foreach (var name in agentNames)
-        {
-            var underscoreName = name.Replace('-', '_');
-            if (agentId.StartsWith(underscoreName + "_") || agentId.StartsWith(name + "_"))
-            {
-                return name;
-            }
-        }
-        
-        // Fallback: remove hash suffix and convert underscores to hyphens
-        var underscoreIndex = agentId.LastIndexOf('_');
-        if (underscoreIndex > 0)
-        {
-            var basePart = agentId[..underscoreIndex];
-            // Check if this looks like a double-part name (sr_developer -> sr-developer)
-            var converted = basePart.Replace('_', '-');
-            if (agentNames.Contains(converted))
-            {
-                return converted;
-            }
-        }
-        
-        // Last resort
-        return agentId.Replace('_', '-');
-    }
-    
-    /// <summary>
-    /// Extracts tool/function calls from agent response messages.
-    /// </summary>
-    private List<ToolCall> ExtractToolCalls(IList<AIChatMessage> messages)
-    {
-        var toolCalls = new List<ToolCall>();
-        
-        foreach (var message in messages)
-        {
-            foreach (var content in message.Contents)
-            {
-                if (content is FunctionCallContent functionCall)
-                {
-                    // Convert arguments dictionary to JSON string
-                    var argumentsJson = functionCall.Arguments != null 
-                        ? JsonSerializer.Serialize(functionCall.Arguments)
-                        : "{}";
-                    
-                    toolCalls.Add(new ToolCall
-                    {
-                        Id = functionCall.CallId ?? $"call_{Guid.NewGuid():N}",
-                        Type = "function",
-                        Function = new FunctionCall
-                        {
-                            Name = functionCall.Name ?? "unknown",
-                            Arguments = argumentsJson
-                        }
-                    });
-                    
-                    _logger.LogDebug("Extracted tool call: {Name} with args {Args}", 
-                        functionCall.Name, argumentsJson);
-                }
-            }
-        }
-        
-        return toolCalls;
-    }
-    
-    /// <summary>
-    /// Converts OpenAI-format messages to Microsoft.Extensions.AI format,
-    /// including proper handling of tool results.
-    /// </summary>
-    private static List<AIChatMessage> ConvertToAIMessages(List<ChatMessage> messages)
-    {
-        var aiMessages = new List<AIChatMessage>();
-        
-        foreach (var m in messages)
-        {
-            if (m.Role.Equals("tool", StringComparison.OrdinalIgnoreCase))
-            {
-                // Tool result message - convert to FunctionResultContent
-                var resultContent = new FunctionResultContent(
-                    callId: m.ToolCallId ?? "",
-                    result: m.Content);
-                
-                var toolMessage = new AIChatMessage(ChatRole.Tool, [resultContent]);
-                aiMessages.Add(toolMessage);
-            }
-            else if (m.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase) && m.ToolCalls?.Count > 0)
-            {
-                // Assistant message with tool calls - convert to FunctionCallContent
-                var contents = new List<AIContent>();
-                
-                // Add any text content first
-                if (!string.IsNullOrEmpty(m.Content))
-                {
-                    contents.Add(new TextContent(m.Content));
-                }
-                
-                // Add tool calls
-                foreach (var tc in m.ToolCalls)
-                {
-                    var args = JsonSerializer.Deserialize<Dictionary<string, object?>>(tc.Function.Arguments) 
-                        ?? new Dictionary<string, object?>();
-                    contents.Add(new FunctionCallContent(tc.Id, tc.Function.Name, args));
-                }
-                
-                var assistantMessage = new AIChatMessage(ChatRole.Assistant, contents);
-                aiMessages.Add(assistantMessage);
-            }
-            else
-            {
-                // Regular user/assistant message
-                var role = m.Role.Equals("user", StringComparison.OrdinalIgnoreCase) 
-                    ? ChatRole.User 
-                    : ChatRole.Assistant;
-                aiMessages.Add(new AIChatMessage(role, m.Content ?? ""));
-            }
-        }
-        
-        return aiMessages;
-    }
 
     private static string FormatDeliberationOutput(List<(string Agent, string Response)> responses, bool isComplete)
     {
@@ -468,7 +325,7 @@ public class AgentOrchestrator : IAgentOrchestrator
         foreach (var (agent, response) in responses)
         {
             // Clean up agent name - remove hash suffix and format nicely
-            var cleanAgentName = CleanAgentName(agent);
+            var cleanAgentName = AgentNameFormatter.CleanAgentName(agent);
             sb.AppendLine($"### {cleanAgentName}");
             sb.AppendLine(response);
             sb.AppendLine();
@@ -487,246 +344,4 @@ public class AgentOrchestrator : IAgentOrchestrator
         
         return sb.ToString();
     }
-
-    private static string CleanAgentName(string agentId)
-    {
-        // Agent IDs come as "business_analyst_f242e03183c849..." or "sr_business_analyst_..."
-        // Extract just the meaningful part and format it nicely
-        
-        // Remove any hash suffix (32 char hex at end)
-        var name = agentId;
-        if (name.Length > 32)
-        {
-            var lastUnderscore = name.LastIndexOf('_');
-            if (lastUnderscore > 0 && name.Length - lastUnderscore - 1 == 32)
-            {
-                name = name[..lastUnderscore];
-            }
-        }
-        
-        // Convert underscores/hyphens to spaces and title case
-        return string.Join(" ", name.Replace('-', '_').Split('_')
-            .Where(word => word.Length > 0)
-            .Select(word => char.ToUpper(word[0]) + (word.Length > 1 ? word[1..].ToLower() : "")));
-    }
-
-    /// <summary>
-    /// Streams content first, then sends task ID marker as the final chunk.
-    /// This ensures task ID appears once at the end, not scattered throughout.
-    /// </summary>
-    private static async IAsyncEnumerable<ChatCompletionChunk> StreamResponseWithTaskIdAsync(
-        string content,
-        string taskId,
-        string model,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var completionId = $"chatcmpl-{Guid.NewGuid():N}";
-        var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        
-        // Stream the main content
-        const int chunkSize = 10;
-        for (var i = 0; i < content.Length; i += chunkSize)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            
-            var chunk = content.Substring(i, Math.Min(chunkSize, content.Length - i));
-            
-            yield return new ChatCompletionChunk
-            {
-                Id = completionId,
-                Created = created,
-                Model = model,
-                Choices =
-                [
-                    new ChunkChoice
-                    {
-                        Index = 0,
-                        Delta = new ChatMessageDelta
-                        {
-                            Content = chunk
-                        },
-                        FinishReason = null
-                    }
-                ]
-            };
-            
-            await Task.Delay(5, cancellationToken);
-        }
-        
-        // Send task ID marker as a single final content chunk (before finish)
-        var taskIdMarker = $"\n\n<!-- task:{taskId} -->";
-        yield return new ChatCompletionChunk
-        {
-            Id = completionId,
-            Created = created,
-            Model = model,
-            Choices =
-            [
-                new ChunkChoice
-                {
-                    Index = 0,
-                    Delta = new ChatMessageDelta
-                    {
-                        Content = taskIdMarker
-                    },
-                    FinishReason = null
-                }
-            ]
-        };
-        
-        // Final chunk with finish reason
-        yield return new ChatCompletionChunk
-        {
-            Id = completionId,
-            Created = created,
-            Model = model,
-            Choices =
-            [
-                new ChunkChoice
-                {
-                    Index = 0,
-                    Delta = new ChatMessageDelta(),
-                    FinishReason = "stop"
-                }
-            ]
-        };
-    }
-    
-    /// <summary>
-    /// Streams tool calls to the client in OpenAI-compatible format.
-    /// Emits tool_calls deltas and ends with finish_reason="tool_calls".
-    /// Task ID is embedded in the first chunk's content for continuity tracking.
-    /// </summary>
-    private static async IAsyncEnumerable<ChatCompletionChunk> StreamToolCallsAsync(
-        List<ToolCall> toolCalls,
-        string taskId,
-        string model,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var completionId = $"chatcmpl-{Guid.NewGuid():N}";
-        var created = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        
-        // First chunk: role + task ID marker as content (so client can track continuity)
-        // The task ID is in content so it persists in conversation history
-        yield return new ChatCompletionChunk
-        {
-            Id = completionId,
-            Created = created,
-            Model = model,
-            Choices =
-            [
-                new ChunkChoice
-                {
-                    Index = 0,
-                    Delta = new ChatMessageDelta
-                    {
-                        Role = "assistant",
-                        Content = $"<!-- task:{taskId} -->"
-                    },
-                    FinishReason = null
-                }
-            ]
-        };
-        
-        // Stream each tool call - OpenAI format sends each tool call's parts
-        for (var i = 0; i < toolCalls.Count; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            
-            var tc = toolCalls[i];
-            
-            // First delta for this tool call: id, type, function name
-            yield return new ChatCompletionChunk
-            {
-                Id = completionId,
-                Created = created,
-                Model = model,
-                Choices =
-                [
-                    new ChunkChoice
-                    {
-                        Index = 0,
-                        Delta = new ChatMessageDelta
-                        {
-                            ToolCalls =
-                            [
-                                new ToolCallDelta
-                                {
-                                    Index = i,
-                                    Id = tc.Id,
-                                    Type = "function",
-                                    Function = new FunctionCallDelta
-                                    {
-                                        Name = tc.Function.Name,
-                                        Arguments = ""
-                                    }
-                                }
-                            ]
-                        },
-                        FinishReason = null
-                    }
-                ]
-            };
-            
-            // Stream arguments in chunks (like OpenAI does)
-            var args = tc.Function.Arguments;
-            const int argChunkSize = 50;
-            for (var j = 0; j < args.Length; j += argChunkSize)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                
-                var argChunk = args.Substring(j, Math.Min(argChunkSize, args.Length - j));
-                
-                yield return new ChatCompletionChunk
-                {
-                    Id = completionId,
-                    Created = created,
-                    Model = model,
-                    Choices =
-                    [
-                        new ChunkChoice
-                        {
-                            Index = 0,
-                            Delta = new ChatMessageDelta
-                            {
-                                ToolCalls =
-                                [
-                                    new ToolCallDelta
-                                    {
-                                        Index = i,
-                                        Function = new FunctionCallDelta
-                                        {
-                                            Arguments = argChunk
-                                        }
-                                    }
-                                ]
-                            },
-                            FinishReason = null
-                        }
-                    ]
-                };
-                
-                await Task.Delay(1, cancellationToken);
-            }
-        }
-        
-        // Final chunk with finish_reason="tool_calls" - this is critical!
-        // It tells the client "stop here and execute the tools"
-        yield return new ChatCompletionChunk
-        {
-            Id = completionId,
-            Created = created,
-            Model = model,
-            Choices =
-            [
-                new ChunkChoice
-                {
-                    Index = 0,
-                    Delta = new ChatMessageDelta(),
-                    FinishReason = "tool_calls"
-                }
-            ]
-        };
-    }
 }
-

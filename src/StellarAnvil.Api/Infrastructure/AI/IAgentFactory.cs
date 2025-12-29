@@ -20,16 +20,4 @@ public interface IAgentFactory
     /// Uses a fast model for quick speaker selection decisions.
     /// </summary>
     IChatClient CreateManagerChatClient();
-    
-    /// <summary>
-    /// Creates an IChatClient with tools for direct agent calls (bypassing the workflow).
-    /// Used for tool result continuations where we want to continue with a specific agent.
-    /// </summary>
-    IChatClient CreateChatClientWithTools(IList<AITool>? tools);
-    
-    /// <summary>
-    /// Gets the system prompt for a specific agent.
-    /// </summary>
-    string GetSystemPrompt(string agentName);
 }
-

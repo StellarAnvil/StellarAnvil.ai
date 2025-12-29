@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using StellarAnvil.Api.Application.DTOs;
 
-namespace StellarAnvil.Api.Infrastructure.Helpers;
+namespace StellarAnvil.Api.Application.Helpers;
 
 public static partial class TaskIdHelper
 {
@@ -44,5 +44,4 @@ public static partial class TaskIdHelper
         return $"{response}\n\n<!-- task:{taskId} -->";
     }
 }
-
 

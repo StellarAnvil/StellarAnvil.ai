@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using StellarAnvil.Api.Application.DTOs;
 
-namespace StellarAnvil.Api.Infrastructure.Helpers;
+namespace StellarAnvil.Api.Application.Helpers;
 
 /// <summary>
 /// Converts OpenAI-format tools to Microsoft.Extensions.AI AITool format
@@ -49,5 +49,4 @@ public static class ToolConverter
             parametersSchema);
     }
 }
-
 

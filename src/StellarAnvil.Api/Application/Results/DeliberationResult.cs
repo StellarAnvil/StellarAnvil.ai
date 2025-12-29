@@ -1,5 +1,3 @@
-using StellarAnvil.Api.Application.DTOs;
-
 namespace StellarAnvil.Api.Application.Results;
 
 /// <summary>
@@ -20,9 +18,9 @@ public sealed record DeliberationResult
     
     /// <summary>
     /// Tool calls that need to be executed by the client.
-    /// When non-empty, the server should emit these as OpenAI tool_calls and stop streaming.
+    /// When non-empty, the server should emit these as tool_calls and stop streaming.
     /// </summary>
-    public List<ToolCall> ToolCalls { get; init; } = [];
+    public List<RequestedToolCall> ToolCalls { get; init; } = [];
     
     /// <summary>
     /// Whether this result contains tool calls that need client execution.
@@ -38,7 +36,6 @@ public sealed record DeliberationResult
     public static DeliberationResult TextResponse(string response, bool isComplete) =>
         new() { Response = response, IsComplete = isComplete };
     
-    public static DeliberationResult ToolCallResponse(List<ToolCall> toolCalls, string? agent) =>
+    public static DeliberationResult ToolCallResponse(List<RequestedToolCall> toolCalls, string? agent) =>
         new() { ToolCalls = toolCalls, ToolCallAgent = agent, IsComplete = false };
 }
-
