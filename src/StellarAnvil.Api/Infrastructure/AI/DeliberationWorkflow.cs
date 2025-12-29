@@ -63,5 +63,75 @@ public class DeliberationWorkflow : IDeliberationWorkflow
         
         return new WorkflowBuildResult(workflow, managerInstance);
     }
+    
+    /// <summary>
+    /// Gets an IChatClient for direct agent calls (bypassing the workflow).
+    /// Used for tool result continuations where we want to continue with a specific agent.
+    /// </summary>
+    public IChatClient? GetAgentChatClient(string agentName, IList<AITool>? tools = null)
+    {
+        // Extract the base agent name from the full ID (e.g., "developer_abc123" -> "developer")
+        var baseName = ExtractBaseAgentName(agentName);
+        
+        if (!AllAgentNames.Contains(baseName))
+        {
+            _logger.LogWarning("Unknown agent name: {AgentName}, base: {BaseName}", agentName, baseName);
+            return null;
+        }
+        
+        _logger.LogInformation("Creating direct chat client for agent: {AgentName}", baseName);
+        return _agentFactory.CreateChatClientWithTools(tools);
+    }
+    
+    /// <summary>
+    /// Gets the system prompt for a specific agent.
+    /// </summary>
+    public string GetAgentSystemPrompt(string agentName)
+    {
+        var baseName = ExtractBaseAgentName(agentName);
+        return _agentRegistry.GetSystemPrompt(baseName);
+    }
+    
+    /// <summary>
+    /// Extracts the base agent name from a full agent ID.
+    /// Agent IDs come as "developer_abc123..." - we need just "developer".
+    /// </summary>
+    private static string ExtractBaseAgentName(string agentId)
+    {
+        // Agent names in AllAgentNames use hyphens: "business-analyst", "sr-developer", etc.
+        // Agent IDs from the workflow use underscores: "developer_abc123", "sr_developer_abc123"
+        
+        // First, check if it's already a base name
+        if (AllAgentNames.Contains(agentId))
+        {
+            return agentId;
+        }
+        
+        // Try to match against known patterns
+        foreach (var name in AllAgentNames)
+        {
+            // Convert hyphen to underscore for comparison
+            var underscoreName = name.Replace('-', '_');
+            if (agentId.StartsWith(underscoreName + "_") || agentId.StartsWith(name + "_"))
+            {
+                return name;
+            }
+        }
+        
+        // Fallback: try to extract by removing the hash suffix
+        var underscoreIndex = agentId.LastIndexOf('_');
+        if (underscoreIndex > 0)
+        {
+            var potentialName = agentId[..underscoreIndex].Replace('_', '-');
+            if (AllAgentNames.Contains(potentialName))
+            {
+                return potentialName;
+            }
+        }
+        
+        // Last resort: return as-is
+        return agentId;
+    }
 }
+
 

@@ -57,10 +57,16 @@ public class AgentFactory : IAgentFactory
     }
     
     /// <summary>
-    /// Creates a wrapped IChatClient that includes the specified tools in every chat completion request
+    /// Creates a wrapped IChatClient that includes the specified tools in every chat completion request.
+    /// Used for tool result continuations where we want to continue with a specific agent.
     /// </summary>
-    private IChatClient CreateChatClientWithTools(IList<AITool> tools)
+    public IChatClient CreateChatClientWithTools(IList<AITool>? tools)
     {
+        if (tools == null || tools.Count == 0)
+        {
+            return _chatClient;
+        }
+        
         // Use ConfigureOptions to add tools to every chat completion call
         return new ChatClientBuilder(_chatClient)
             .ConfigureOptions(options =>
@@ -81,6 +87,14 @@ public class AgentFactory : IAgentFactory
     public IChatClient CreateManagerChatClient()
     {
         return _managerChatClient;
+    }
+    
+    /// <summary>
+    /// Gets the system prompt for a specific agent.
+    /// </summary>
+    public string GetSystemPrompt(string agentName)
+    {
+        return _agentRegistry.GetSystemPrompt(agentName);
     }
 }
 

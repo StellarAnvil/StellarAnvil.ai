@@ -47,6 +47,26 @@ DECISION LOGIC:
    - Return AWAIT_USER to get user feedback/approval
    - Example: {"nextAgent": "AWAIT_USER", "reasoning": "Phase complete, awaiting user approval"}
 
+TOOL CALL / FUNCTION CALL HANDLING (CRITICAL):
+===============================================
+When you see tool/function calls and results in the conversation, this means an agent 
+requested external tools (file reads, code search, etc.) and received results.
+
+RECOGNIZE TOOL CALL PATTERNS:
+- Assistant message with "tool_calls" or function requests → Agent asked for tool execution
+- Message with role "tool" or tool results → Results from tool execution
+
+ROUTING AFTER TOOL RESULTS:
+- If you see tool results in the conversation, the SAME AGENT that requested the tool 
+  should continue processing those results
+- DO NOT route to Senior for review until the agent has finished using tool results
+- DO NOT route to a different agent - let the original agent complete their work
+
+Example tool call flow:
+1. business-analyst requests read_file tool → pauses
+2. Tool result comes back with file contents
+3. You should route BACK to business-analyst to continue (not to sr-business-analyst)
+
 4. User gives FEEDBACK (no approval):
    - Stay in current phase, route to Junior for revision
    - Example: {"nextAgent": "developer", "reasoning": "User gave feedback, revising"}
@@ -64,4 +84,5 @@ EXAMPLES:
 - User: "Add error handling" → {"nextAgent": "developer", "reasoning": "Feedback, revise"}
 - User: "LGTM" (after DEV) → {"nextAgent": "quality-assurance", "reasoning": "Moving to QA"}
 - User: "Ship it" (after QA) → {"nextAgent": "COMPLETE", "reasoning": "Done"}
+
 

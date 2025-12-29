@@ -8,3 +8,4 @@ namespace StellarAnvil.Api.Application.Results;
 /// </summary>
 public sealed record WorkflowBuildResult(Workflow Workflow, ManagerGroupChatManager Manager);
 
+

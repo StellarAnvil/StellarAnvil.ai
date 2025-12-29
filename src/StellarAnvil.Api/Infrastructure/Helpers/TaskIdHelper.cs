@@ -11,17 +11,17 @@ public static partial class TaskIdHelper
     private static partial Regex TaskIdPattern();
     
     /// <summary>
-    /// Extracts task ID from assistant messages in the conversation history.
+    /// Extracts task ID from messages in the conversation history.
+    /// Looks in both assistant and user messages (task ID may be embedded in user content
+    /// when sent as continuation, or in assistant messages as response markers).
     /// Returns null if no task ID is found (indicating a fresh chat).
     /// </summary>
     public static string? ExtractTaskId(List<ChatMessage> messages)
     {
-        // Scan assistant messages for task ID (from newest to oldest)
+        // Scan all messages for task ID (from newest to oldest)
+        // Check assistant messages first, then user messages
         foreach (var message in messages.AsEnumerable().Reverse())
         {
-            if (!message.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
-                continue;
-            
             if (string.IsNullOrEmpty(message.Content))
                 continue;
             
@@ -44,4 +44,5 @@ public static partial class TaskIdHelper
         return $"{response}\n\n<!-- task:{taskId} -->";
     }
 }
+
 

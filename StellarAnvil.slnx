@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/StellarAnvil.Api/StellarAnvil.Api.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/StellarAnvil.Api.IntegrationTests/StellarAnvil.Api.IntegrationTests.csproj" />
+  </Folder>
 </Solution>

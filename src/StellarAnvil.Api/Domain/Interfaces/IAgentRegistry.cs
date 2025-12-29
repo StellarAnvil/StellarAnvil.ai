@@ -8,3 +8,4 @@ public interface IAgentRegistry
     string GetSystemPrompt(string agentName);
 }
 
+

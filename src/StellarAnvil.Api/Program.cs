@@ -85,3 +85,6 @@ static async IAsyncEnumerable<ChatCompletionChunk> StreamChatCompletionAsync(
         yield return chunk;
     }
 }
+
+// Partial class for WebApplicationFactory in integration tests
+public partial class Program { }
