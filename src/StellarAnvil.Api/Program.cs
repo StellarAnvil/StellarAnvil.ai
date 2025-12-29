@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Scalar.AspNetCore;
 using StellarAnvil.Api.Application.DTOs;
+using StellarAnvil.Api.Application.Services;
 using StellarAnvil.Api.Application.UseCases;
 using StellarAnvil.Api.Domain.Interfaces;
 using StellarAnvil.Api.Infrastructure.AI;
@@ -28,6 +29,11 @@ builder.Services.AddSingleton<IAgentRegistry, AgentRegistry>();
 // Infrastructure Services
 builder.Services.AddSingleton<IAgentFactory, AgentFactory>();
 builder.Services.AddSingleton<IDeliberationWorkflow, DeliberationWorkflow>();
+
+// Application Services
+builder.Services.AddScoped<ITaskManager, TaskManager>();
+builder.Services.AddScoped<IWorkflowExecutor, WorkflowExecutor>();
+builder.Services.AddSingleton<IResponseFormatter, ResponseFormatter>();
 
 // Application Use Cases
 builder.Services.AddScoped<IAgentOrchestrator, AgentOrchestrator>();
